@@ -3,7 +3,7 @@ module.exports = {
     {
       name: 'rally-staff',
       cwd: './apps/staff',
-      script: 'node_modules/.bin/next',
+      script: 'node_modules/next/dist/bin/next',
       args: 'start -p 3001',
       instances: 4,
       exec_mode: 'cluster',
@@ -20,7 +20,7 @@ module.exports = {
     {
       name: 'rally-manage',
       cwd: './apps/manage',
-      script: 'node_modules/.bin/next',
+      script: 'node_modules/next/dist/bin/next',
       args: 'start -p 3002',
       instances: 2,
       exec_mode: 'cluster',
@@ -37,7 +37,7 @@ module.exports = {
     {
       name: 'rally-admin',
       cwd: './apps/admin',
-      script: 'node_modules/.bin/next',
+      script: 'node_modules/next/dist/bin/next',
       args: 'start -p 3003',
       instances: 1,
       exec_mode: 'fork',
@@ -54,7 +54,7 @@ module.exports = {
     {
       name: 'rally-portal',
       cwd: './apps/portal',
-      script: 'node_modules/.bin/next',
+      script: 'node_modules/next/dist/bin/next',
       args: 'start -p 3004',
       instances: 2,
       exec_mode: 'cluster',

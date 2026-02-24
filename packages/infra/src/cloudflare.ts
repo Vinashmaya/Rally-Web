@@ -1,5 +1,5 @@
-// Cloudflare DNS API integration (scoped token — DNS:Edit only)
-// Uses env vars: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ZONE_ID
+// Cloudflare DNS API integration
+// Uses env vars: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ZONE_ID, CLOUDFLARE_EMAIL
 
 // ---------------------------------------------------------------------------
 // Types
@@ -25,40 +25,46 @@ interface CloudflareApiResponse<T> {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function getEnv(): { apiToken: string; zoneId: string } {
-  const apiToken = process.env.CLOUDFLARE_API_TOKEN;
+function getEnv(): { apiKey: string; email: string; zoneId: string } {
+  const apiKey = process.env.CLOUDFLARE_API_TOKEN;
+  const email = process.env.CLOUDFLARE_EMAIL;
   const zoneId = process.env.CLOUDFLARE_ZONE_ID;
 
-  if (!apiToken) {
+  if (!apiKey) {
     throw new Error('[Cloudflare] Missing CLOUDFLARE_API_TOKEN env var');
+  }
+  if (!email) {
+    throw new Error('[Cloudflare] Missing CLOUDFLARE_EMAIL env var');
   }
   if (!zoneId) {
     throw new Error('[Cloudflare] Missing CLOUDFLARE_ZONE_ID env var');
   }
 
-  return { apiToken, zoneId };
+  return { apiKey, email, zoneId };
 }
 
 function baseUrl(zoneId: string): string {
   return `https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records`;
 }
 
-function headers(apiToken: string): HeadersInit {
+function headers(apiKey: string, email: string): HeadersInit {
   return {
-    Authorization: `Bearer ${apiToken}`,
+    'X-Auth-Key': apiKey,
+    'X-Auth-Email': email,
     'Content-Type': 'application/json',
   };
 }
 
 async function cfFetch<T>(
   url: string,
-  apiToken: string,
+  apiKey: string,
+  email: string,
   init?: RequestInit,
 ): Promise<T> {
   const response = await fetch(url, {
     ...init,
     headers: {
-      ...headers(apiToken),
+      ...headers(apiKey, email),
       ...(init?.headers ?? {}),
     },
   });
@@ -89,9 +95,9 @@ export async function createDnsRecord(
   name: string,
   content: string,
 ): Promise<DnsRecord> {
-  const { apiToken, zoneId } = getEnv();
+  const { apiKey, email, zoneId } = getEnv();
 
-  const record = await cfFetch<DnsRecord>(baseUrl(zoneId), apiToken, {
+  const record = await cfFetch<DnsRecord>(baseUrl(zoneId), apiKey, email, {
     method: 'POST',
     body: JSON.stringify({
       type: 'A',
@@ -109,11 +115,12 @@ export async function createDnsRecord(
  * Delete a DNS record by ID (for rollback).
  */
 export async function deleteDnsRecord(recordId: string): Promise<void> {
-  const { apiToken, zoneId } = getEnv();
+  const { apiKey, email, zoneId } = getEnv();
 
   await cfFetch<{ id: string }>(
     `${baseUrl(zoneId)}/${recordId}`,
-    apiToken,
+    apiKey,
+    email,
     { method: 'DELETE' },
   );
 }
@@ -122,7 +129,7 @@ export async function deleteDnsRecord(recordId: string): Promise<void> {
  * List all DNS records for the zone.
  */
 export async function listDnsRecords(): Promise<DnsRecord[]> {
-  const { apiToken, zoneId } = getEnv();
+  const { apiKey, email, zoneId } = getEnv();
 
   // Cloudflare paginates at 100 per page. Iterate until we have them all.
   const allRecords: DnsRecord[] = [];
@@ -131,7 +138,7 @@ export async function listDnsRecords(): Promise<DnsRecord[]> {
 
   while (hasMore) {
     const url = `${baseUrl(zoneId)}?page=${page}&per_page=100`;
-    const records = await cfFetch<DnsRecord[]>(url, apiToken);
+    const records = await cfFetch<DnsRecord[]>(url, apiKey, email);
     allRecords.push(...records);
     // If we got fewer than 100, we've reached the last page
     hasMore = records.length === 100;
@@ -153,14 +160,14 @@ export async function dnsRecordExists(name: string): Promise<boolean> {
  * Get a specific DNS record by name. Returns null if not found.
  */
 export async function getDnsRecord(name: string): Promise<DnsRecord | null> {
-  const { apiToken, zoneId } = getEnv();
+  const { apiKey, email, zoneId } = getEnv();
 
   // Cloudflare expects FQDN in the name filter.
   // If the caller passed a bare subdomain (e.g. "acme"), qualify it.
   const fqdn = name.includes('.') ? name : `${name}.rally.vin`;
 
   const url = `${baseUrl(zoneId)}?type=A&name=${encodeURIComponent(fqdn)}`;
-  const records = await cfFetch<DnsRecord[]>(url, apiToken);
+  const records = await cfFetch<DnsRecord[]>(url, apiKey, email);
 
   if (records.length === 0) {
     return null;

@@ -50,14 +50,16 @@ scripts/node_modules/
 scripts/package-lock.json
 
 # iOS files (this directory coexists with iOS project locally)
+# NOTE: Use leading slash to anchor to repo root — prevents matching
+# inside packages/ on case-insensitive macOS (e.g. Services/ vs packages/services/)
 ParkingLotApp/
 ParkingLotApp.xcodeproj/
-DesignSystem/
-Models/
-Services/
-Views/
-ViewModels/
-Managers/
+/DesignSystem/
+/Models/
+/Services/
+/Views/
+/ViewModels/
+/Managers/
 CONTEXT/
 web/
 docs/

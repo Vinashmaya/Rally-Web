@@ -1,0 +1,42 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default: authenticated users can read/write all documents
+    // (existing permissive rule for dealerships, vehicles, interactions, etc.)
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Recent CRM Views: each user owns their own subcollection
+    match /recentCrmViews/{userId}/customers/{docId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Vehicle Lists: owner and shared users have access
+    match /vehicleLists/{listId} {
+      // Read: owner or in sharedWith array
+      allow read: if request.auth != null && (
+        resource.data.ownerId == request.auth.uid ||
+        request.auth.uid in resource.data.sharedWith
+      );
+
+      // Create: must set yourself as owner
+      allow create: if request.auth != null &&
+        request.resource.data.ownerId == request.auth.uid;
+
+      // Update/Delete: owner only
+      allow update, delete: if request.auth != null &&
+        resource.data.ownerId == request.auth.uid;
+
+      // Items subcollection: inherit access from parent list
+      match /items/{itemId} {
+        allow read, write: if request.auth != null && (
+          get(/databases/$(database)/documents/vehicleLists/$(listId)).data.ownerId == request.auth.uid ||
+          request.auth.uid in get(/databases/$(database)/documents/vehicleLists/$(listId)).data.sharedWith
+        );
+      }
+    }
+  }
+}

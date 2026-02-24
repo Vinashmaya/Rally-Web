@@ -1,0 +1,170 @@
+// Cloudflare DNS API integration (scoped token — DNS:Edit only)
+// Uses env vars: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ZONE_ID
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface DnsRecord {
+  id: string;
+  type: string;
+  name: string;
+  content: string;
+  proxied: boolean;
+  ttl: number;
+}
+
+interface CloudflareApiResponse<T> {
+  success: boolean;
+  errors: Array<{ code: number; message: string }>;
+  messages: Array<{ code: number; message: string }>;
+  result: T;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function getEnv(): { apiToken: string; zoneId: string } {
+  const apiToken = process.env.CLOUDFLARE_API_TOKEN;
+  const zoneId = process.env.CLOUDFLARE_ZONE_ID;
+
+  if (!apiToken) {
+    throw new Error('[Cloudflare] Missing CLOUDFLARE_API_TOKEN env var');
+  }
+  if (!zoneId) {
+    throw new Error('[Cloudflare] Missing CLOUDFLARE_ZONE_ID env var');
+  }
+
+  return { apiToken, zoneId };
+}
+
+function baseUrl(zoneId: string): string {
+  return `https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records`;
+}
+
+function headers(apiToken: string): HeadersInit {
+  return {
+    Authorization: `Bearer ${apiToken}`,
+    'Content-Type': 'application/json',
+  };
+}
+
+async function cfFetch<T>(
+  url: string,
+  apiToken: string,
+  init?: RequestInit,
+): Promise<T> {
+  const response = await fetch(url, {
+    ...init,
+    headers: {
+      ...headers(apiToken),
+      ...(init?.headers ?? {}),
+    },
+  });
+
+  const body = (await response.json()) as CloudflareApiResponse<T>;
+
+  if (!body.success) {
+    const errorMessages = body.errors
+      .map((e) => `[${e.code}] ${e.message}`)
+      .join('; ');
+    throw new Error(
+      `[Cloudflare] API error (HTTP ${response.status}): ${errorMessages}`,
+    );
+  }
+
+  return body.result;
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/**
+ * Create an A record for a tenant subdomain.
+ * Always proxied (orange cloud) with TTL auto.
+ */
+export async function createDnsRecord(
+  name: string,
+  content: string,
+): Promise<DnsRecord> {
+  const { apiToken, zoneId } = getEnv();
+
+  const record = await cfFetch<DnsRecord>(baseUrl(zoneId), apiToken, {
+    method: 'POST',
+    body: JSON.stringify({
+      type: 'A',
+      name,
+      content,
+      proxied: true,
+      ttl: 1, // auto
+    }),
+  });
+
+  return record;
+}
+
+/**
+ * Delete a DNS record by ID (for rollback).
+ */
+export async function deleteDnsRecord(recordId: string): Promise<void> {
+  const { apiToken, zoneId } = getEnv();
+
+  await cfFetch<{ id: string }>(
+    `${baseUrl(zoneId)}/${recordId}`,
+    apiToken,
+    { method: 'DELETE' },
+  );
+}
+
+/**
+ * List all DNS records for the zone.
+ */
+export async function listDnsRecords(): Promise<DnsRecord[]> {
+  const { apiToken, zoneId } = getEnv();
+
+  // Cloudflare paginates at 100 per page. Iterate until we have them all.
+  const allRecords: DnsRecord[] = [];
+  let page = 1;
+  let hasMore = true;
+
+  while (hasMore) {
+    const url = `${baseUrl(zoneId)}?page=${page}&per_page=100`;
+    const records = await cfFetch<DnsRecord[]>(url, apiToken);
+    allRecords.push(...records);
+    // If we got fewer than 100, we've reached the last page
+    hasMore = records.length === 100;
+    page++;
+  }
+
+  return allRecords;
+}
+
+/**
+ * Check if a subdomain A record already exists.
+ */
+export async function dnsRecordExists(name: string): Promise<boolean> {
+  const record = await getDnsRecord(name);
+  return record !== null;
+}
+
+/**
+ * Get a specific DNS record by name. Returns null if not found.
+ */
+export async function getDnsRecord(name: string): Promise<DnsRecord | null> {
+  const { apiToken, zoneId } = getEnv();
+
+  // Cloudflare expects FQDN in the name filter.
+  // If the caller passed a bare subdomain (e.g. "acme"), qualify it.
+  const fqdn = name.includes('.') ? name : `${name}.rally.vin`;
+
+  const url = `${baseUrl(zoneId)}?type=A&name=${encodeURIComponent(fqdn)}`;
+  const records = await cfFetch<DnsRecord[]>(url, apiToken);
+
+  if (records.length === 0) {
+    return null;
+  }
+
+  return records[0] ?? null;
+}

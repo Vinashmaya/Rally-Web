@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+/* Rally Design Tokens as CSS Custom Properties */
+:root {
+  /* Brand */
+  --rally-gold: #D4A017;
+  --rally-gold-light: #E8C547;
+  --rally-gold-dim: #A67C13;
+  --rally-gold-muted: #3D3209;
+
+  /* Surfaces */
+  --surface-base: #09090B;
+  --surface-raised: #111114;
+  --surface-overlay: #18181B;
+  --surface-border: #27272A;
+  --surface-border-hover: #3F3F46;
+
+  /* Text */
+  --text-primary: #FAFAFA;
+  --text-secondary: #A1A1AA;
+  --text-tertiary: #71717A;
+  --text-disabled: #52525B;
+  --text-inverse: #09090B;
+
+  /* Status */
+  --status-success: #22C55E;
+  --status-warning: #EAB308;
+  --status-error: #EF4444;
+  --status-info: #3B82F6;
+
+  /* Activity */
+  --activity-show-video: #3B82F6;
+  --activity-test-drive: #8B5CF6;
+  --activity-off-lot: #F97316;
+  --activity-fueling: #22C55E;
+  --activity-run-charge: #06B6D4;
+  --activity-sold: #EF4444;
+  --activity-available: #22C55E;
+}
+
+/* Dark mode only — no light theme */
+body {
+  background-color: var(--surface-base);
+  color: var(--text-primary);
+}
+
+/* Focus ring — gold for accessibility (Rule 14) */
+*:focus-visible {
+  outline: 2px solid var(--rally-gold);
+  outline-offset: 2px;
+}
+
+/* Selection */
+::selection {
+  background-color: var(--rally-gold-muted);
+  color: var(--text-primary);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--surface-base);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--surface-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--surface-border-hover);
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

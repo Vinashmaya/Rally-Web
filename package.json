@@ -1,0 +1,22 @@
+{
+  "name": "rally-web",
+  "private": true,
+  "scripts": {
+    "dev:staff": "turbo dev --filter=@rally/staff",
+    "dev:manage": "turbo dev --filter=@rally/manage",
+    "dev:admin": "turbo dev --filter=@rally/admin",
+    "dev:portal": "turbo dev --filter=@rally/portal",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "clean": "turbo clean"
+  },
+  "devDependencies": {
+    "turbo": "^2.4.0",
+    "typescript": "^5.7.0"
+  },
+  "packageManager": "pnpm@10.26.0",
+  "engines": {
+    "node": ">=20"
+  }
+}

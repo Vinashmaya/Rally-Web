@@ -1,0 +1,81 @@
+# Dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+
+# Turbo
+.turbo/
+
+# Build artifacts
+dist/
+build/
+
+# OS files
+.DS_Store
+*.swp
+*~
+._*
+
+# Environment
+# NOTE: .env files are temporarily committed for dev convenience.
+# Before going live, uncomment these lines and rotate all keys.
+# .env
+# .env.local
+# .env.*.local
+
+# PM2
+logs/
+pids/
+
+# Firebase
+firebase-debug.log
+.firebase/
+
+# IDE
+.idea/
+*.code-workspace
+.vscode/
+
+# Secrets
+SECRETS.rtfd/
+
+# Archives
+*.zip
+*.tar.gz
+
+# Scripts dependencies
+scripts/node_modules/
+scripts/package-lock.json
+
+# iOS files (this directory coexists with iOS project locally)
+ParkingLotApp/
+ParkingLotApp.xcodeproj/
+DesignSystem/
+Models/
+Services/
+Views/
+ViewModels/
+Managers/
+CONTEXT/
+web/
+docs/
+GoogleService-Info.plist
+lot-config.json
+vehicle-details.json
+SYSTEM_DESIGN.md
+XCODE_SETUP.md
+architecture.html
+*.xcodeproj
+*.xcworkspace
+DerivedData/
+xcuserdata/
+*.xcuserstate
+*.dSYM
+*.dSYM.zip
+*.ipa
+.build/
+.swiftpm/
+Pods/
+Carthage/

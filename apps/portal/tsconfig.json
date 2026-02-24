@@ -1,0 +1,23 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "plugins": [{ "name": "next" }],
+    "paths": {
+      "@/*": ["./app/*", "./src/*"],
+      "@rally/ui": ["../../packages/ui/src"],
+      "@rally/ui/*": ["../../packages/ui/src/*"],
+      "@rally/firebase": ["../../packages/firebase/src"],
+      "@rally/firebase/*": ["../../packages/firebase/src/*"],
+      "@rally/services": ["../../packages/services/src"],
+      "@rally/services/*": ["../../packages/services/src/*"]
+    },
+    "jsx": "preserve",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowJs": true,
+    "noEmit": true,
+    "incremental": true
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules"]
+}

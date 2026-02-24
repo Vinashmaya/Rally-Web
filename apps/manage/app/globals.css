@@ -1,0 +1,130 @@
+@import "tailwindcss";
+
+/*
+ * Rally Design Tokens — CSS Custom Properties
+ * Dark mode only. Gold on black. Industrial command center.
+ */
+
+@theme {
+  /* ── Rally Gold ─────────────────────────────────────────── */
+  --color-rally-gold: #D4A017;
+  --color-rally-goldLight: #E8C547;
+  --color-rally-goldDim: #A67C13;
+  --color-rally-goldMuted: #3D3209;
+
+  /* ── Surfaces ───────────────────────────────────────────── */
+  --color-surface-base: #09090B;
+  --color-surface-raised: #111114;
+  --color-surface-overlay: #18181B;
+  --color-surface-border: #27272A;
+  --color-surface-borderHover: #3F3F46;
+
+  /* ── Text ───────────────────────────────────────────────── */
+  --color-text-primary: #FAFAFA;
+  --color-text-secondary: #A1A1AA;
+  --color-text-tertiary: #71717A;
+  --color-text-disabled: #52525B;
+  --color-text-inverse: #09090B;
+
+  /* ── Status ─────────────────────────────────────────────── */
+  --color-status-success: #22C55E;
+  --color-status-warning: #EAB308;
+  --color-status-error: #EF4444;
+  --color-status-info: #3B82F6;
+
+  /* ── Activity ───────────────────────────────────────────── */
+  --color-activity-showVideo: #3B82F6;
+  --color-activity-testDrive: #8B5CF6;
+  --color-activity-offLot: #F97316;
+  --color-activity-fueling: #22C55E;
+  --color-activity-runCharge: #06B6D4;
+  --color-activity-sold: #EF4444;
+  --color-activity-available: #22C55E;
+
+  /* ── Battery ────────────────────────────────────────────── */
+  --color-battery-healthy: #22C55E;
+  --color-battery-warning: #EAB308;
+  --color-battery-critical: #EF4444;
+
+  /* ── Spacing (4px grid) ─────────────────────────────────── */
+  --spacing-rally-0: 0px;
+  --spacing-rally-1: 4px;
+  --spacing-rally-2: 8px;
+  --spacing-rally-3: 12px;
+  --spacing-rally-4: 16px;
+  --spacing-rally-5: 20px;
+  --spacing-rally-6: 24px;
+  --spacing-rally-8: 32px;
+  --spacing-rally-10: 40px;
+  --spacing-rally-12: 48px;
+  --spacing-rally-16: 64px;
+
+  /* ── Radii ──────────────────────────────────────────────── */
+  --radius-rally: 8px;
+  --radius-rally-sm: 4px;
+  --radius-rally-lg: 12px;
+  --radius-rally-xl: 16px;
+
+  /* ── Shadows ────────────────────────────────────────────── */
+  --shadow-rally-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-rally: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-rally-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
+
+  /* ── Fonts ──────────────────────────────────────────────── */
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* ── Base Styles ────────────────────────────────────────────── */
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--color-surface-base);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Focus Ring (Gold) ──────────────────────────────────────── */
+
+*:focus-visible {
+  outline: 2px solid var(--color-rally-gold);
+  outline-offset: 2px;
+}
+
+/* ── Scrollbar (Dark) ───────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--color-surface-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-surface-borderHover);
+}
+
+/* ── Reduced Motion ─────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,25 +1,51 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
-import { Button } from '@rally/ui';
-import { Input } from '@rally/ui';
+import { useRouter } from 'next/navigation';
+import { Mail, Lock, LogIn, ShieldAlert } from 'lucide-react';
+import { Button, Input, useToast } from '@rally/ui';
+import { useAuthStore } from '@rally/services';
 
 export default function AdminLoginPage() {
+  const router = useRouter();
+  const { toast } = useToast();
+  const signIn = useAuthStore((s) => s.signIn);
+  const signOut = useAuthStore((s) => s.signOut);
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setError(null);
+
+    if (!email.trim() || !password.trim()) {
+      toast({ type: 'error', title: 'Please enter your email and password.' });
+      return;
+    }
+
     setLoading(true);
 
     try {
-      // TODO: Wire up Firebase Auth + 2FA verification
-      console.log('Admin login attempt:', email);
-    } catch (err) {
-      setError('Invalid email or password');
+      await signIn(email, password);
+
+      // Verify super admin status — non-admins are signed out immediately
+      const { isSuperAdmin } = useAuthStore.getState();
+      if (!isSuperAdmin) {
+        await signOut();
+        toast({
+          type: 'error',
+          title: 'Access denied',
+          description: 'This portal is restricted to super administrators.',
+        });
+        return;
+      }
+
+      router.push('/');
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Sign in failed. Please try again.';
+      toast({ type: 'error', title: 'Sign in failed', description: message });
     } finally {
       setLoading(false);
     }
@@ -29,13 +55,11 @@ export default function AdminLoginPage() {
     <div className="flex flex-col gap-8">
       {/* Header */}
       <div className="flex flex-col items-center gap-2">
-        <span className="text-2xl font-bold text-rally-gold tracking-tight">
-          Rally
-        </span>
-        <h1 className="text-xl font-semibold text-text-primary">
-          Sign In
+        <h1 className="text-4xl font-bold font-mono text-[var(--rally-gold)] tracking-tight">
+          RALLY
         </h1>
-        <p className="text-sm text-text-secondary">
+        <p className="text-sm text-[var(--text-secondary)] flex items-center gap-1.5">
+          <ShieldAlert className="h-3.5 w-3.5" />
           Super Admin
         </p>
       </div>
@@ -48,8 +72,10 @@ export default function AdminLoginPage() {
           placeholder="admin@rally.vin"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          startIcon={<Mail className="h-4 w-4" />}
           required
           autoComplete="email"
+          autoFocus
         />
         <Input
           label="Password"
@@ -57,20 +83,18 @@ export default function AdminLoginPage() {
           placeholder="Enter your password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          startIcon={<Lock className="h-4 w-4" />}
           required
           autoComplete="current-password"
         />
 
-        {error && (
-          <p className="text-xs text-status-error text-center">{error}</p>
-        )}
-
-        <Button type="submit" loading={loading} className="w-full">
+        <Button type="submit" variant="primary" size="lg" loading={loading} className="w-full mt-2">
+          <LogIn className="h-4 w-4" />
           Sign In
         </Button>
 
-        <p className="text-xs text-text-tertiary text-center">
-          Restricted access. 2FA required.
+        <p className="text-xs text-[var(--text-tertiary)] text-center">
+          Restricted access. Super admin only.
         </p>
       </form>
     </div>

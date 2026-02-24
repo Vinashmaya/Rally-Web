@@ -67,11 +67,22 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   // ---------------------------------------------------------------------------
   // signIn — email/password authentication
+  // After Firebase auth succeeds, sets the __session cookie so middleware
+  // allows navigation to protected routes.
   // ---------------------------------------------------------------------------
   signIn: async (email: string, password: string) => {
     set({ isLoading: true });
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const credential = await signInWithEmailAndPassword(auth, email, password);
+
+      // Set session cookie for middleware auth guard
+      const idToken = await credential.user.getIdToken();
+      await fetch('/api/auth/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken }),
+      });
+
       // onAuthStateChanged listener handles the rest
     } catch (err) {
       set({ isLoading: false });
@@ -81,14 +92,17 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   // ---------------------------------------------------------------------------
   // signOut — sign out and clear all state
+  // Clears the __session cookie so middleware redirects to /login.
   // ---------------------------------------------------------------------------
   signOut: async () => {
     try {
+      await fetch('/api/auth/session', { method: 'DELETE' }).catch(() => {});
       await firebaseSignOut(auth);
       // onAuthStateChanged listener handles clearing state
     } catch (err) {
       console.error('[AuthStore] Sign out error:', err);
-      // Force-clear state even if Firebase signout fails
+      // Force-clear cookie and state even if Firebase signout fails
+      await fetch('/api/auth/session', { method: 'DELETE' }).catch(() => {});
       set({
         firebaseUser: null,
         dealerUser: null,
@@ -124,6 +138,15 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
           isLoading: true,
         });
 
+        // Refresh session cookie (handles page reload, token refresh)
+        user.getIdToken().then((idToken) => {
+          fetch('/api/auth/session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ idToken }),
+          }).catch(() => {}); // Best-effort, don't block
+        }).catch(() => {});
+
         try {
           // Load DealerUser from Firestore users/{uid}
           const userDoc = await getDoc(doc(db, 'users', user.uid));
@@ -157,6 +180,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         }
       } else {
         // User logged out — clear everything
+        fetch('/api/auth/session', { method: 'DELETE' }).catch(() => {});
         set({
           firebaseUser: null,
           dealerUser: null,

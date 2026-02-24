@@ -19,7 +19,7 @@ export function middleware(request: NextRequest) {
   response.headers.set('x-tenant-slug', slug);
 
   // Public routes
-  const publicRoutes = ['/login', '/api/health'];
+  const publicRoutes = ['/login', '/api/health', '/api/auth'];
   if (publicRoutes.some((route) => pathname.startsWith(route))) {
     return response;
   }

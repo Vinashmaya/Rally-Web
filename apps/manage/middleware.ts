@@ -5,7 +5,7 @@ export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Public routes — no auth required
-  const publicRoutes = ['/login', '/api/health'];
+  const publicRoutes = ['/login', '/api/health', '/api/auth'];
   if (publicRoutes.some((route) => pathname.startsWith(route))) {
     return NextResponse.next();
   }

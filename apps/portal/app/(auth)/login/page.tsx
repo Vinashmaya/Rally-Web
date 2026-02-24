@@ -1,25 +1,37 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
-import { Button } from '@rally/ui';
-import { Input } from '@rally/ui';
+import { useRouter } from 'next/navigation';
+import { Mail, Lock, LogIn } from 'lucide-react';
+import { Button, Input, useToast } from '@rally/ui';
+import { useAuthStore } from '@rally/services';
 
 export default function PortalLoginPage() {
+  const router = useRouter();
+  const { toast } = useToast();
+  const signIn = useAuthStore((s) => s.signIn);
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setError(null);
+
+    if (!email.trim() || !password.trim()) {
+      toast({ type: 'error', title: 'Please enter your email and password.' });
+      return;
+    }
+
     setLoading(true);
 
     try {
-      // TODO: Wire up Firebase Auth — tenant-scoped login
-      console.log('Portal login attempt:', email);
-    } catch (err) {
-      setError('Invalid email or password');
+      await signIn(email, password);
+      router.push('/');
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Sign in failed. Please try again.';
+      toast({ type: 'error', title: 'Sign in failed', description: message });
     } finally {
       setLoading(false);
     }
@@ -29,13 +41,10 @@ export default function PortalLoginPage() {
     <div className="flex flex-col gap-8">
       {/* Header */}
       <div className="flex flex-col items-center gap-2">
-        <span className="text-2xl font-bold text-rally-gold tracking-tight">
-          Rally
-        </span>
-        <h1 className="text-xl font-semibold text-text-primary">
-          Sign In
+        <h1 className="text-4xl font-bold font-mono text-[var(--rally-gold)] tracking-tight">
+          RALLY
         </h1>
-        <p className="text-sm text-text-secondary">
+        <p className="text-sm text-[var(--text-secondary)]">
           Dealer Portal
         </p>
       </div>
@@ -48,8 +57,10 @@ export default function PortalLoginPage() {
           placeholder="you@dealership.com"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          startIcon={<Mail className="h-4 w-4" />}
           required
           autoComplete="email"
+          autoFocus
         />
         <Input
           label="Password"
@@ -57,15 +68,13 @@ export default function PortalLoginPage() {
           placeholder="Enter your password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          startIcon={<Lock className="h-4 w-4" />}
           required
           autoComplete="current-password"
         />
 
-        {error && (
-          <p className="text-xs text-status-error text-center">{error}</p>
-        )}
-
-        <Button type="submit" loading={loading} className="w-full">
+        <Button type="submit" variant="primary" size="lg" loading={loading} className="w-full mt-2">
+          <LogIn className="h-4 w-4" />
           Sign In
         </Button>
       </form>

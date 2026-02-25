@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import {
   MapPin,
   RefreshCw,
@@ -24,6 +25,16 @@ import { useToast } from '@rally/ui';
 import { useFleetVehicles } from '@rally/firebase';
 import { useTenantStore } from '@rally/services';
 import type { FleetVehicle, FleetVehicleStatus } from '@rally/firebase';
+
+// Mapbox GL requires browser APIs — dynamic import with SSR disabled
+const FleetMap = dynamic(() => import('./FleetMap'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-[400px] items-center justify-center rounded-[var(--radius-rally)] bg-[var(--surface-overlay)]">
+      <Skeleton variant="card" className="h-full w-full" />
+    </div>
+  ),
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -268,6 +279,17 @@ export default function FleetPage() {
     [fleetVehicles],
   );
 
+  const handleVehicleClick = useCallback(
+    (vehicle: FleetVehicle) => {
+      toast({
+        type: 'info',
+        title: vehicle.stockNumber,
+        description: `${vehicle.year} ${vehicle.make} ${vehicle.model} — ${vehicle.status}`,
+      });
+    },
+    [toast],
+  );
+
   const handleRefresh = () => {
     // Data is real-time via Firestore snapshot listener — no manual refresh needed
     toast({
@@ -333,41 +355,14 @@ export default function FleetPage() {
 
       {/* Map + Sidebar */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Map placeholder */}
+        {/* Live Mapbox GL map */}
         <Card className="lg:col-span-2">
-          <CardContent className="p-0">
-            {/* TODO: Integrate Mapbox GL JS — render vehicle positions as markers */}
-            {/* TODO: Use mapboxgl.Map with style 'mapbox://styles/mapbox/dark-v11' */}
-            {/* TODO: Add real-time marker updates via Firestore snapshot listener */}
-            <div className="relative flex h-[400px] items-center justify-center rounded-[var(--radius-rally)] bg-[var(--surface-overlay)]">
-              {/* Faux grid lines for map feel */}
-              <div className="absolute inset-0 opacity-5">
-                <div className="h-full w-full" style={{
-                  backgroundImage: 'linear-gradient(var(--text-tertiary) 1px, transparent 1px), linear-gradient(90deg, var(--text-tertiary) 1px, transparent 1px)',
-                  backgroundSize: '40px 40px',
-                }} />
-              </div>
-
-              {/* Center content */}
-              <div className="relative z-10 flex flex-col items-center gap-3 text-center">
-                <div className="rounded-full bg-[var(--rally-gold-muted)] p-4">
-                  <MapPin className="h-8 w-8 text-[var(--rally-gold)]" strokeWidth={1.5} />
-                </div>
-                <p className="text-sm font-medium text-[var(--text-primary)]">
-                  Mapbox GL JS map will render here
-                </p>
-                <p className="text-xs text-[var(--text-tertiary)] max-w-xs">
-                  Vehicle positions from Ghost OBD2 trackers will display as real-time markers on the map.
-                </p>
-              </div>
-
-              {/* Mock map dots */}
-              <div className="absolute top-[30%] left-[25%] h-3 w-3 rounded-full bg-[var(--status-success)] opacity-60 animate-pulse" />
-              <div className="absolute top-[50%] left-[60%] h-3 w-3 rounded-full bg-[var(--status-success)] opacity-60 animate-pulse" />
-              <div className="absolute top-[70%] left-[40%] h-3 w-3 rounded-full bg-[var(--text-disabled)] opacity-40" />
-              <div className="absolute top-[20%] right-[20%] h-3 w-3 rounded-full bg-[var(--text-disabled)] opacity-40" />
-              <div className="absolute bottom-[25%] right-[30%] h-3 w-3 rounded-full bg-[var(--status-error)] opacity-40" />
-            </div>
+          <CardContent className="p-0 overflow-hidden rounded-[var(--radius-rally)]">
+            <FleetMap
+              vehicles={fleetVehicles}
+              onVehicleClick={handleVehicleClick}
+              className="h-[400px]"
+            />
           </CardContent>
         </Card>
 

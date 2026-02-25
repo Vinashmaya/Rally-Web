@@ -155,8 +155,15 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
         try {
           // Load DealerUser from Firestore users/{uid}
+          // Wrap in a timeout — if Firestore SDK hangs (e.g. broken IndexedDB),
+          // we fail fast instead of showing a loading screen forever.
           console.log('[AuthStore] Calling getDoc for users/' + user.uid + '...');
-          const userDoc = await getDoc(doc(db, 'users', user.uid));
+          const userDoc = await Promise.race([
+            getDoc(doc(db, 'users', user.uid)),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('Firestore getDoc timed out after 15s')), 15_000)
+            ),
+          ]);
           console.log('[AuthStore] getDoc returned, exists:', userDoc.exists());
           if (userDoc.exists()) {
             const data = userDoc.data();

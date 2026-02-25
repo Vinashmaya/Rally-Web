@@ -10,12 +10,7 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import type { FirebaseApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import type { Auth } from 'firebase/auth';
-import {
-  initializeFirestore,
-  persistentLocalCache,
-  persistentMultipleTabManager,
-  getFirestore,
-} from 'firebase/firestore';
+import { getFirestore } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import type { FirebaseStorage } from 'firebase/storage';
@@ -51,19 +46,7 @@ function initFirebase() {
   const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
   const auth = getAuth(app);
 
-  // Firebase v11 uses initializeFirestore with local cache settings
-  // instead of the deprecated enableMultiTabIndexedDbPersistence.
-  let db: Firestore;
-  try {
-    db = initializeFirestore(app, {
-      localCache: persistentLocalCache({
-        tabManager: persistentMultipleTabManager(),
-      }),
-    });
-  } catch {
-    // Already initialized (hot reload) — fall back to existing instance
-    db = getFirestore(app);
-  }
+  const db = getFirestore(app);
 
   const storage = getStorage(app);
 

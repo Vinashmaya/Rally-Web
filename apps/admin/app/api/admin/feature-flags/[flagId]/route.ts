@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { adminDb } from '@rally/firebase/admin';
+import { adminDb, requireSuperAdmin, isVerifiedSession } from '@rally/firebase/admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,6 +12,9 @@ export async function PUT(
   { params }: { params: Promise<{ flagId: string }> },
 ) {
   try {
+    const auth = await requireSuperAdmin();
+    if (!isVerifiedSession(auth)) return auth;
+
     const { flagId } = await params;
     const body = await request.json();
 
@@ -60,6 +63,9 @@ export async function DELETE(
   { params }: { params: Promise<{ flagId: string }> },
 ) {
   try {
+    const auth = await requireSuperAdmin();
+    if (!isVerifiedSession(auth)) return auth;
+
     const { flagId } = await params;
 
     // Verify flag exists

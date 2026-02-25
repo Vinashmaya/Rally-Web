@@ -9,9 +9,7 @@ import {
   Button,
   Badge,
   Skeleton,
-  StatChart,
 } from '@rally/ui';
-import type { StatChartDataPoint } from '@rally/ui';
 import {
   Building2,
   Users,
@@ -385,7 +383,7 @@ export default function AdminDashboardPage() {
               </h2>
             </div>
             <p className="text-xs text-text-tertiary">
-              VPS {process.env.NEXT_PUBLIC_VPS_IP ?? '66.179.189.87'}
+              VPS {process.env.NEXT_PUBLIC_VPS_IP ?? '—'}
             </p>
           </CardHeader>
           <CardContent className="space-y-4">

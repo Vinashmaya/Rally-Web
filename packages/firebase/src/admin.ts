@@ -49,6 +49,16 @@ function getAdminDb(): Firestore {
 // the old direct `adminDb` and `adminAuth` constants.
 export { getAdminApp, getAdminAuth, getAdminDb, FieldValue };
 
+// Auth guards — server-side route protection
+export {
+  verifySession,
+  requireAuth,
+  requireRole,
+  requireSuperAdmin,
+  isVerifiedSession,
+} from './auth-guard';
+export type { VerifiedSession } from './auth-guard';
+
 // Legacy aliases for backward compat during migration (will be removed)
 // These are getters, not constants — they defer initialization.
 export const adminApp = new Proxy({} as App, {

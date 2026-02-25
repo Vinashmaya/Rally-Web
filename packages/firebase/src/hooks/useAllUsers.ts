@@ -1,7 +1,7 @@
 'use client';
 
 // Domain hook: cross-tenant user listener via collection group query
-// Uses useCollectionGroup to query `members` across all tenants
+// Uses useCollectionGroup to query `memberships` across all tenants
 // Supports client-side search and role filtering
 
 import { useMemo } from 'react';
@@ -31,10 +31,10 @@ export function useAllUsers(options: UseAllUsersOptions = {}): UseAllUsersReturn
   }, []);
 
   // Stable key — no variable Firestore parameters
-  const constraintKey = 'allUsers:members';
+  const constraintKey = 'allUsers:memberships';
 
   const { data, loading, error } = useCollectionGroup<StoreMembership>(
-    'members',
+    'memberships',
     constraints,
     constraintKey,
   );

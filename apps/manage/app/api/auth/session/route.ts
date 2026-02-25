@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { getAdminAuth } from '@rally/firebase/admin';
+
+export const dynamic = 'force-dynamic';
 
 // POST — Set session cookie after Firebase client sign-in
 export async function POST(request: NextRequest) {
@@ -9,6 +12,9 @@ export async function POST(request: NextRequest) {
     if (!idToken || typeof idToken !== 'string') {
       return NextResponse.json({ error: 'Missing idToken' }, { status: 400 });
     }
+
+    // Verify the token is genuine before storing it
+    await getAdminAuth().verifyIdToken(idToken, true);
 
     const response = NextResponse.json({ status: 'ok' });
     response.cookies.set('__session', idToken, {
@@ -21,7 +27,7 @@ export async function POST(request: NextRequest) {
 
     return response;
   } catch {
-    return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+    return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 });
   }
 }
 

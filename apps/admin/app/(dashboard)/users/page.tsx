@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   Badge,
   Card,
@@ -15,8 +15,6 @@ import {
 } from '@rally/ui';
 import type { FilterOption } from '@rally/ui';
 import type { ColumnDef } from '@tanstack/react-table';
-import { useAllUsers } from '@rally/firebase';
-import type { StoreMembership } from '@rally/firebase';
 import {
   Users,
   Search,
@@ -150,22 +148,35 @@ const TENANT_COLORS: Record<string, string> = {
 } as const;
 
 // ---------------------------------------------------------------------------
-// Helper: map StoreMembership → SystemUser
+// API response item shape (from GET /api/admin/users)
 // ---------------------------------------------------------------------------
 
-function mapMembershipToSystemUser(membership: StoreMembership): SystemUser {
-  const memberStatus = membership.status === 'suspended' ? 'disabled' as const : 'active' as const;
+interface ApiUser {
+  id: string;
+  email: string;
+  displayName: string;
+  role: string;
+  status: string;
+  dealershipId: string;
+  groupId: string;
+  joinedAt: string | null;
+}
 
+// ---------------------------------------------------------------------------
+// Helper: map API response → SystemUser
+// ---------------------------------------------------------------------------
+
+function mapApiUserToSystemUser(apiUser: ApiUser): SystemUser {
   return {
-    id: membership.employeeUid,
-    email: `${membership.employeeUid}@rally.vin`,
-    displayName: membership.employeeUid,
-    role: membership.role as UserRole,
-    dealershipId: membership.storeId,
-    status: memberStatus,
-    createdAt: membership.joinedAt instanceof Date ? membership.joinedAt : new Date(membership.joinedAt),
-    tenantName: membership.groupId,
-    tenantSlug: membership.groupId,
+    id: apiUser.id,
+    email: apiUser.email || `${apiUser.id}@rally.vin`,
+    displayName: apiUser.displayName || apiUser.id,
+    role: (apiUser.role ?? 'salesperson') as UserRole,
+    dealershipId: apiUser.dealershipId,
+    status: (apiUser.status === 'disabled' ? 'disabled' : 'active') as SystemUser['status'],
+    createdAt: apiUser.joinedAt ? new Date(apiUser.joinedAt) : new Date(),
+    tenantName: apiUser.groupId,
+    tenantSlug: apiUser.groupId,
   };
 }
 
@@ -274,12 +285,30 @@ export default function SystemUsersPage() {
   const [roleFilter, setRoleFilter] = useState('all');
   const [search, setSearch] = useState('');
 
-  // Real Firestore data via useAllUsers hook
-  const { allUsers: rawUsers, loading, error } = useAllUsers({});
+  // Fetch users from server-side API (merges Firebase Auth + Firestore memberships)
+  const [rawUsers, setRawUsers] = useState<ApiUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
 
-  // Map StoreMembership[] → SystemUser[]
+  useEffect(() => {
+    fetch('/api/admin/users')
+      .then((res) => res.json())
+      .then((json: { success?: boolean; data?: ApiUser[]; error?: string }) => {
+        if (json.success && json.data) {
+          setRawUsers(json.data);
+        } else {
+          setError(new Error(json.error ?? 'Failed to load users'));
+        }
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err : new Error('Failed to load users'));
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  // Map API response → SystemUser[]
   const users: SystemUser[] = useMemo(
-    () => rawUsers.map(mapMembershipToSystemUser),
+    () => rawUsers.map(mapApiUserToSystemUser),
     [rawUsers],
   );
 

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { requireAuth, isVerifiedSession } from '@rally/firebase/admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +22,9 @@ interface ChatResponse {
 // POST — AI chat proxy (provider-agnostic stub)
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireAuth();
+    if (!isVerifiedSession(auth)) return auth;
+
     const body = await request.json();
 
     const { messages, dealershipId } = body as ChatRequest;

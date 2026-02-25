@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { adminDb } from '@rally/firebase/admin';
+import { adminDb, requireSuperAdmin, isVerifiedSession } from '@rally/firebase/admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +18,9 @@ interface FeatureFlag {
 // GET — List all feature flags
 export async function GET() {
   try {
+    const auth = await requireSuperAdmin();
+    if (!isVerifiedSession(auth)) return auth;
+
     const snapshot = await adminDb.collection(COLLECTION).orderBy('name').get();
 
     const flags: FeatureFlag[] = snapshot.docs.map((doc) => ({
@@ -38,6 +41,9 @@ export async function GET() {
 // POST — Create or update a feature flag
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireSuperAdmin();
+    if (!isVerifiedSession(auth)) return auth;
+
     const body = await request.json();
 
     const { id, name, enabled, description } = body as {

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { adminAuth, adminDb } from '@rally/firebase/admin';
+import { adminAuth, adminDb, requireRole, isVerifiedSession } from '@rally/firebase/admin';
+import { USER_ROLE_VALUES } from '@rally/firebase';
 import crypto from 'node:crypto';
 
 export const dynamic = 'force-dynamic';
@@ -13,6 +14,9 @@ function generateTempPassword(): string {
 // POST — Invite a new user (create Firebase Auth account + Firestore documents)
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireRole('owner', 'general_manager');
+    if (!isVerifiedSession(auth)) return auth;
+
     const body = await request.json();
 
     const { email, displayName, role, phone, dealershipId, groupId } = body as {
@@ -32,7 +36,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate role
-    const validRoles = ['salesperson', 'finance_manager', 'sales_manager', 'general_manager', 'principal'] as const;
+    const validRoles = USER_ROLE_VALUES;
     if (!validRoles.includes(role as typeof validRoles[number])) {
       return NextResponse.json(
         { error: `Invalid role. Must be one of: ${validRoles.join(', ')}` },
@@ -90,7 +94,7 @@ export async function POST(request: NextRequest) {
       });
 
     // Step 5: Write audit log
-    await adminDb.collection('auditLog').add({
+    await adminDb.collection('auditLogs').add({
       action: 'user.invited',
       targetUid: uid,
       email,

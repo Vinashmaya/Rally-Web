@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { adminAuth, adminDb } from '@rally/firebase/admin';
+import { adminAuth, adminDb, requireRole, isVerifiedSession } from '@rally/firebase/admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,6 +10,9 @@ export async function POST(
   { params }: { params: Promise<{ uid: string }> },
 ) {
   try {
+    const auth = await requireRole('owner', 'general_manager');
+    if (!isVerifiedSession(auth)) return auth;
+
     const { uid } = await params;
 
     // Verify user exists in Firestore
@@ -35,7 +38,7 @@ export async function POST(
     });
 
     // Write audit log
-    await adminDb.collection('auditLog').add({
+    await adminDb.collection('auditLogs').add({
       action: 'user.deactivated',
       targetUid: uid,
       email: userData?.email ?? 'unknown',

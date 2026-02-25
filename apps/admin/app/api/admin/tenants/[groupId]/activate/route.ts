@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { adminAuth, adminDb } from '@rally/firebase/admin';
+import { adminAuth, adminDb, requireSuperAdmin, isVerifiedSession } from '@rally/firebase/admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,6 +10,9 @@ export async function POST(
   { params }: { params: Promise<{ groupId: string }> },
 ) {
   try {
+    const auth = await requireSuperAdmin();
+    if (!isVerifiedSession(auth)) return auth;
+
     const { groupId } = await params;
 
     // Verify group exists
@@ -23,8 +26,40 @@ export async function POST(
       return NextResponse.json({ error: 'Group is already active' }, { status: 409 });
     }
 
-    // Update group status to active
     const now = new Date().toISOString();
+
+    // Re-enable all member accounts FIRST — only update group status if all succeed
+    const membersSnapshot = await adminDb
+      .collection('groups')
+      .doc(groupId)
+      .collection('members')
+      .get();
+
+    const memberUids = membersSnapshot.docs
+      .map((doc) => doc.data().uid as string | undefined)
+      .filter((uid): uid is string => Boolean(uid));
+
+    const results = await Promise.allSettled(
+      memberUids.map((uid) => adminAuth.updateUser(uid, { disabled: false })),
+    );
+
+    const errors: string[] = [];
+    let enabledCount = 0;
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        enabledCount++;
+      } else {
+        errors.push(result.reason?.message ?? 'Unknown error');
+      }
+    }
+
+    if (errors.length > 0 && enabledCount === 0) {
+      return NextResponse.json(
+        { error: 'Failed to enable any member accounts', errors },
+        { status: 500 },
+      );
+    }
+
     await adminDb.collection('groups').doc(groupId).update({
       status: 'active',
       suspendedAt: null,
@@ -32,31 +67,8 @@ export async function POST(
       updatedAt: now,
     });
 
-    // Re-enable all member accounts
-    const membersSnapshot = await adminDb
-      .collection('groups')
-      .doc(groupId)
-      .collection('members')
-      .get();
-
-    let enabledCount = 0;
-    const errors: string[] = [];
-
-    for (const memberDoc of membersSnapshot.docs) {
-      const memberData = memberDoc.data();
-      if (memberData.uid) {
-        try {
-          await adminAuth.updateUser(memberData.uid, { disabled: false });
-          enabledCount++;
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          errors.push(`Failed to enable ${memberData.uid}: ${msg}`);
-        }
-      }
-    }
-
     // Write audit log
-    await adminDb.collection('auditLog').add({
+    await adminDb.collection('auditLogs').add({
       action: 'tenant.activated',
       groupId,
       enabledCount,

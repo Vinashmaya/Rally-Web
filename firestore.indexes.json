@@ -1,0 +1,103 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "auditLogs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "tenantId", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "crmCustomers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "dealershipId", "order": "ASCENDING" },
+        { "fieldPath": "updatedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "batteryReports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "dealershipId", "order": "ASCENDING" },
+        { "fieldPath": "lastEventTime", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fleetVehicles",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "dealershipId", "order": "ASCENDING" },
+        { "fieldPath": "lastUpdate", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fleetVehicles",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "dealershipId", "order": "ASCENDING" },
+        { "fieldPath": "source", "order": "ASCENDING" },
+        { "fieldPath": "lastUpdate", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "users",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "dealershipId", "order": "ASCENDING" },
+        { "fieldPath": "displayName", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "users",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "dealershipId", "order": "ASCENDING" },
+        { "fieldPath": "role", "order": "ASCENDING" },
+        { "fieldPath": "displayName", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "vehicleLists",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "dealershipId", "order": "ASCENDING" },
+        { "fieldPath": "updatedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "vehicleActivities",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "dealershipId", "order": "ASCENDING" },
+        { "fieldPath": "startedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "vehicles",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "dealershipId", "order": "ASCENDING" },
+        { "fieldPath": "stockNumber", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "vehicles",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "dealershipId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "stockNumber", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "memberships",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "joinedAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

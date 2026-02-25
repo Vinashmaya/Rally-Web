@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { deprovisionTenant } from '@rally/infra';
-import { adminDb } from '@rally/firebase/admin';
+import { adminDb, requireSuperAdmin, isVerifiedSession } from '@rally/firebase/admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,14 +11,18 @@ export async function POST(
   { params }: { params: Promise<{ groupId: string }> },
 ) {
   try {
+    const auth = await requireSuperAdmin();
+    if (!isVerifiedSession(auth)) return auth;
+
     const { groupId } = await params;
     const body = await request.json();
 
-    const { reason, actorId } = body as { reason: string; actorId: string };
+    const { reason } = body as { reason: string };
+    const actorId = auth.uid; // Use verified UID, not user-supplied
 
-    if (!reason || !actorId) {
+    if (!reason) {
       return NextResponse.json(
-        { error: 'Missing required fields: reason, actorId' },
+        { error: 'Missing required field: reason' },
         { status: 400 },
       );
     }

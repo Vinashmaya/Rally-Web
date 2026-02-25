@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   Card,
@@ -19,10 +19,8 @@ import {
   Users,
   Car,
   Store,
-  Activity,
   Globe,
   Calendar,
-  CreditCard,
   User,
   ExternalLink,
   Pause,
@@ -36,141 +34,33 @@ import {
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
-// Types
+// Types (derived from Firestore schema)
 // ---------------------------------------------------------------------------
+
+interface TenantStoreDetail {
+  id: string;
+  name: string;
+  city: string;
+  state: string;
+  phone?: string;
+  status: 'active' | 'suspended';
+}
 
 interface TenantDetail {
   id: string;
-  slug: string;
-  groupName: string;
-  status: 'active' | 'suspended' | 'trial' | 'deprovisioned';
-  subdomain: string;
+  name: string;
+  ownerId: string;
+  status: 'active' | 'suspended';
   createdAt: string;
-  plan: 'trial' | 'starter' | 'professional' | 'enterprise';
-  principal: {
-    name: string;
-    email: string;
-    uid: string;
-  };
+  updatedAt: string;
+  featureFlags?: Record<string, boolean>;
+  stores: TenantStoreDetail[];
   stats: {
     users: number;
     stores: number;
     vehicles: number;
-    activeActivities: number;
   };
-  stores: Array<{
-    id: string;
-    name: string;
-    city: string;
-    state: string;
-    phone: string;
-    vehicleCount: number;
-    userCount: number;
-    status: 'active' | 'suspended';
-  }>;
 }
-
-// ---------------------------------------------------------------------------
-// Mock data — TODO: Replace with real API route (GET /api/admin/tenants/[groupId])
-// that uses Firebase Admin SDK to fetch group + subcollections
-// ---------------------------------------------------------------------------
-
-const MOCK_TENANTS: Record<string, TenantDetail> = {
-  grp_001: {
-    id: 'grp_001',
-    slug: 'gallatin-cdjr',
-    groupName: 'Gallatin CDJR',
-    status: 'active',
-    subdomain: 'gallatin-cdjr.rally.vin',
-    createdAt: '2025-11-15T10:30:00Z',
-    plan: 'professional',
-    principal: {
-      name: 'Robert Lisowski',
-      email: 'robert@gallatin-cdjr.com',
-      uid: 'uid_robert_001',
-    },
-    stats: {
-      users: 45,
-      stores: 2,
-      vehicles: 892,
-      activeActivities: 12,
-    },
-    stores: [
-      {
-        id: 'str_001',
-        name: 'Gallatin CDJR - Main',
-        city: 'Gallatin',
-        state: 'TN',
-        phone: '(615) 452-1234',
-        vehicleCount: 623,
-        userCount: 32,
-        status: 'active',
-      },
-      {
-        id: 'str_002',
-        name: 'Gallatin CDJR - Used',
-        city: 'Gallatin',
-        state: 'TN',
-        phone: '(615) 452-5678',
-        vehicleCount: 269,
-        userCount: 13,
-        status: 'active',
-      },
-    ],
-  },
-  grp_002: {
-    id: 'grp_002',
-    slug: 'nashville-motors',
-    groupName: 'Nashville Motors Group',
-    status: 'active',
-    subdomain: 'nashville-motors.rally.vin',
-    createdAt: '2025-12-01T14:00:00Z',
-    plan: 'enterprise',
-    principal: {
-      name: 'James Morrison',
-      email: 'james@nashvillemotors.com',
-      uid: 'uid_james_002',
-    },
-    stats: {
-      users: 67,
-      stores: 3,
-      vehicles: 1203,
-      activeActivities: 28,
-    },
-    stores: [
-      {
-        id: 'str_003',
-        name: 'Nashville Motors - Downtown',
-        city: 'Nashville',
-        state: 'TN',
-        phone: '(615) 255-1111',
-        vehicleCount: 445,
-        userCount: 24,
-        status: 'active',
-      },
-      {
-        id: 'str_004',
-        name: 'Nashville Motors - Brentwood',
-        city: 'Brentwood',
-        state: 'TN',
-        phone: '(615) 255-2222',
-        vehicleCount: 398,
-        userCount: 22,
-        status: 'active',
-      },
-      {
-        id: 'str_005',
-        name: 'Nashville Motors - Hendersonville',
-        city: 'Hendersonville',
-        state: 'TN',
-        phone: '(615) 255-3333',
-        vehicleCount: 360,
-        userCount: 21,
-        status: 'active',
-      },
-    ],
-  },
-} as const;
 
 // ---------------------------------------------------------------------------
 // Status helpers
@@ -178,32 +68,8 @@ const MOCK_TENANTS: Record<string, TenantDetail> = {
 
 function getStatusBadgeVariant(
   status: TenantDetail['status'],
-): 'success' | 'warning' | 'error' | 'info' {
-  switch (status) {
-    case 'active':
-      return 'success';
-    case 'trial':
-      return 'info';
-    case 'suspended':
-      return 'error';
-    case 'deprovisioned':
-      return 'warning';
-  }
-}
-
-function getPlanBadgeVariant(
-  plan: TenantDetail['plan'],
-): 'gold' | 'info' | 'success' | 'default' {
-  switch (plan) {
-    case 'enterprise':
-      return 'gold';
-    case 'professional':
-      return 'info';
-    case 'starter':
-      return 'success';
-    case 'trial':
-      return 'default';
-  }
+): 'success' | 'error' {
+  return status === 'active' ? 'success' : 'error';
 }
 
 function getStoreBadgeVariant(
@@ -231,29 +97,68 @@ export default function TenantDetailPage() {
 
   const groupId = typeof params.groupId === 'string' ? params.groupId : (params.groupId?.[0] ?? '');
 
-  // TODO: Replace with real API route query
-  const tenant = MOCK_TENANTS[groupId] ?? null;
-  const loading = false;
+  // Fetch tenant detail from API
+  const [tenant, setTenant] = useState<TenantDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!groupId) {
+      setLoading(false);
+      return;
+    }
+
+    fetch(`/api/admin/tenants/${groupId}`)
+      .then((res) => {
+        if (!res.ok) throw new Error('Not found');
+        return res.json();
+      })
+      .then((json) => {
+        if (json.success && json.data) {
+          setTenant(json.data as TenantDetail);
+        }
+      })
+      .catch(() => {
+        setTenant(null);
+      })
+      .finally(() => setLoading(false));
+  }, [groupId]);
 
   // Delete confirmation state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
 
   // ---------------------------------------------------------------------------
-  // Action handlers — TODO: Wire to real API routes
+  // Action handlers — wired to real API routes
   // ---------------------------------------------------------------------------
 
-  const handleToggleSuspend = useCallback(() => {
+  const handleToggleSuspend = useCallback(async () => {
     if (!tenant) return;
 
-    const action = tenant.status === 'suspended' ? 'activated' : 'suspended';
-    toast({
-      type: action === 'activated' ? 'success' : 'warning',
-      title: `Tenant ${action}`,
-      description: `${tenant.groupName} has been ${action}.`,
-    });
-    // TODO: Call POST /api/admin/tenants/[groupId]/suspend or /activate
-  }, [tenant, toast]);
+    const endpoint = tenant.status === 'suspended' ? 'activate' : 'suspend';
+    try {
+      const res = await fetch(`/api/admin/tenants/${groupId}/${endpoint}`, {
+        method: 'POST',
+      });
+      const json = await res.json();
+
+      if (!res.ok) {
+        toast({ type: 'error', title: 'Action failed', description: json.error ?? 'Unknown error' });
+        return;
+      }
+
+      const action = endpoint === 'activate' ? 'activated' : 'suspended';
+      toast({
+        type: action === 'activated' ? 'success' : 'warning',
+        title: `Tenant ${action}`,
+        description: `${tenant.name} has been ${action}.`,
+      });
+
+      // Refresh data
+      setTenant((prev) => prev ? { ...prev, status: endpoint === 'activate' ? 'active' : 'suspended' } : prev);
+    } catch {
+      toast({ type: 'error', title: 'Network error', description: 'Could not reach the server.' });
+    }
+  }, [tenant, groupId, toast]);
 
   const handleImpersonate = useCallback(() => {
     toast({
@@ -261,22 +166,35 @@ export default function TenantDetailPage() {
       title: 'Impersonation not yet implemented',
       description: 'This feature will open the tenant portal as the principal user.',
     });
-    // TODO: Generate impersonation token and redirect to tenant portal
   }, [toast]);
 
-  const handleDelete = useCallback(() => {
+  const handleDelete = useCallback(async () => {
     if (!tenant) return;
-    if (deleteConfirmText !== tenant.slug) return;
+    if (deleteConfirmText !== groupId) return;
 
-    toast({
-      type: 'error',
-      title: 'Tenant deprovisioned',
-      description: `${tenant.groupName} has been scheduled for deletion (30-day recovery window).`,
-    });
-    setShowDeleteConfirm(false);
-    setDeleteConfirmText('');
-    // TODO: Call POST /api/admin/tenants/[groupId]/deprovision
-  }, [tenant, deleteConfirmText, toast]);
+    try {
+      const res = await fetch(`/api/admin/tenants/${groupId}/deprovision`, {
+        method: 'POST',
+      });
+      const json = await res.json();
+
+      if (!res.ok) {
+        toast({ type: 'error', title: 'Delete failed', description: json.error ?? 'Unknown error' });
+        return;
+      }
+
+      toast({
+        type: 'warning',
+        title: 'Tenant deprovisioned',
+        description: `${tenant.name} has been scheduled for deletion (30-day recovery window).`,
+      });
+      setShowDeleteConfirm(false);
+      setDeleteConfirmText('');
+      router.push('/tenants');
+    } catch {
+      toast({ type: 'error', title: 'Network error', description: 'Could not reach the server.' });
+    }
+  }, [tenant, deleteConfirmText, groupId, toast, router]);
 
   // ---------------------------------------------------------------------------
   // Loading state
@@ -349,50 +267,35 @@ export default function TenantDetailPage() {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold text-text-primary">
-              {tenant.groupName}
+              {tenant.name}
             </h1>
             <Badge variant={getStatusBadgeVariant(tenant.status)} size="md">
               {tenant.status}
             </Badge>
-            <Badge variant={getPlanBadgeVariant(tenant.plan)} size="md">
-              {tenant.plan}
-            </Badge>
           </div>
           <p className="text-sm text-text-secondary mt-1 font-[family-name:var(--font-geist-mono)]">
-            {tenant.slug}.rally.vin
+            {tenant.id}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <a
-            href={`https://${tenant.subdomain}`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Button variant="ghost" size="sm">
-              <ExternalLink className="h-4 w-4" />
-              Visit Portal
-            </Button>
-          </a>
+          <Button variant="ghost" size="sm" onClick={() => router.push(`/tenants`)}>
+            <ExternalLink className="h-4 w-4" />
+            All Tenants
+          </Button>
         </div>
       </div>
 
       {/* ── Info Card ──────────────────────────────────────────── */}
       <Card>
         <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             <div className="flex items-start gap-3">
               <Globe className="h-4 w-4 text-text-tertiary mt-0.5 shrink-0" />
               <div>
-                <p className="text-xs text-text-tertiary uppercase tracking-wider">Subdomain</p>
-                <a
-                  href={`https://${tenant.subdomain}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-rally-gold hover:text-rally-goldLight transition-colors flex items-center gap-1 mt-0.5"
-                >
-                  {tenant.subdomain}
-                  <ExternalLink className="h-3 w-3" />
-                </a>
+                <p className="text-xs text-text-tertiary uppercase tracking-wider">Group ID</p>
+                <p className="text-sm text-text-primary font-[family-name:var(--font-geist-mono)] mt-0.5">
+                  {tenant.id}
+                </p>
               </div>
             </div>
             <div className="flex items-start gap-3">
@@ -400,28 +303,16 @@ export default function TenantDetailPage() {
               <div>
                 <p className="text-xs text-text-tertiary uppercase tracking-wider">Created</p>
                 <p className="text-sm text-text-primary mt-0.5">
-                  {formatDate(tenant.createdAt)}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start gap-3">
-              <CreditCard className="h-4 w-4 text-text-tertiary mt-0.5 shrink-0" />
-              <div>
-                <p className="text-xs text-text-tertiary uppercase tracking-wider">Plan</p>
-                <p className="text-sm text-text-primary mt-0.5 capitalize">
-                  {tenant.plan}
+                  {tenant.createdAt ? formatDate(tenant.createdAt) : '--'}
                 </p>
               </div>
             </div>
             <div className="flex items-start gap-3">
               <User className="h-4 w-4 text-text-tertiary mt-0.5 shrink-0" />
               <div>
-                <p className="text-xs text-text-tertiary uppercase tracking-wider">Principal</p>
-                <p className="text-sm text-text-primary mt-0.5">
-                  {tenant.principal.name}
-                </p>
-                <p className="text-xs text-text-tertiary">
-                  {tenant.principal.email}
+                <p className="text-xs text-text-tertiary uppercase tracking-wider">Owner</p>
+                <p className="text-sm text-text-primary font-[family-name:var(--font-geist-mono)] mt-0.5">
+                  {tenant.ownerId || '--'}
                 </p>
               </div>
             </div>
@@ -430,7 +321,7 @@ export default function TenantDetailPage() {
       </Card>
 
       {/* ── Stats Row ──────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
         <Card>
           <CardContent className="flex items-center gap-3 py-3">
             <div className="shrink-0 p-2 rounded-rally bg-surface-overlay">
@@ -466,19 +357,6 @@ export default function TenantDetailPage() {
               <p className="text-xs text-text-tertiary uppercase tracking-wider">Vehicles</p>
               <p className="text-lg font-bold text-text-primary font-[family-name:var(--font-geist-mono)]">
                 {tenant.stats.vehicles.toLocaleString()}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center gap-3 py-3">
-            <div className="shrink-0 p-2 rounded-rally bg-surface-overlay">
-              <Activity className="h-4 w-4 text-status-warning" />
-            </div>
-            <div>
-              <p className="text-xs text-text-tertiary uppercase tracking-wider">Active</p>
-              <p className="text-lg font-bold text-text-primary font-[family-name:var(--font-geist-mono)]">
-                {tenant.stats.activeActivities}
               </p>
             </div>
           </CardContent>
@@ -527,29 +405,24 @@ export default function TenantDetailPage() {
                       </Badge>
                     </div>
                     <div className="flex items-center gap-3 mt-1">
-                      <span className="text-xs text-text-tertiary flex items-center gap-1">
-                        <MapPin className="h-3 w-3" />
-                        {store.city}, {store.state}
-                      </span>
-                      <span className="text-xs text-text-tertiary flex items-center gap-1">
-                        <Phone className="h-3 w-3" />
-                        {store.phone}
-                      </span>
+                      {store.city && store.state && (
+                        <span className="text-xs text-text-tertiary flex items-center gap-1">
+                          <MapPin className="h-3 w-3" />
+                          {store.city}, {store.state}
+                        </span>
+                      )}
+                      {store.phone && (
+                        <span className="text-xs text-text-tertiary flex items-center gap-1">
+                          <Phone className="h-3 w-3" />
+                          {store.phone}
+                        </span>
+                      )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-4 shrink-0">
-                    <div className="text-right">
-                      <p className="text-xs text-text-tertiary">Vehicles</p>
-                      <p className="text-sm font-[family-name:var(--font-geist-mono)] text-text-primary tabular-nums">
-                        {store.vehicleCount.toLocaleString()}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs text-text-tertiary">Users</p>
-                      <p className="text-sm font-[family-name:var(--font-geist-mono)] text-text-primary tabular-nums">
-                        {store.userCount}
-                      </p>
-                    </div>
+                  <div className="shrink-0">
+                    <p className="text-xs text-text-tertiary font-[family-name:var(--font-geist-mono)]">
+                      {store.id}
+                    </p>
                   </div>
                 </div>
               ))}
@@ -581,7 +454,8 @@ export default function TenantDetailPage() {
                 <p className="text-xs text-text-tertiary">
                   {tenant.status === 'suspended'
                     ? 'Re-enable portal access and user accounts.'
-                    : 'Disable portal access for all users. Reversible.'}
+                    : 'Disable portal access for all users. Reversible.'
+                  }
                 </p>
               </div>
             </div>
@@ -613,7 +487,7 @@ export default function TenantDetailPage() {
                   Impersonate Principal
                 </p>
                 <p className="text-xs text-text-tertiary">
-                  Access the tenant portal as {tenant.principal.name}. All actions are logged.
+                  Access the tenant portal as the owner. All actions are logged.
                 </p>
               </div>
             </div>
@@ -661,19 +535,19 @@ export default function TenantDetailPage() {
                   </h3>
                 </div>
                 <p className="text-sm text-text-secondary">
-                  This will soft-delete <strong>{tenant.groupName}</strong> and disable all
+                  This will soft-delete <strong>{tenant.name}</strong> and disable all
                   {' '}{tenant.stats.users} user accounts. The tenant will have a 30-day recovery
                   window before permanent deletion.
                 </p>
                 <p className="text-xs text-text-tertiary">
-                  Type <span className="font-[family-name:var(--font-geist-mono)] text-rally-gold">{tenant.slug}</span> to
+                  Type <span className="font-[family-name:var(--font-geist-mono)] text-rally-gold">{groupId}</span> to
                   confirm:
                 </p>
                 <input
                   type="text"
                   value={deleteConfirmText}
                   onChange={(e) => setDeleteConfirmText(e.target.value)}
-                  placeholder={tenant.slug}
+                  placeholder={groupId}
                   className="flex h-10 w-full rounded-rally bg-surface-overlay border border-surface-border px-3 py-2 text-sm text-text-primary placeholder:text-text-disabled focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-error focus-visible:ring-offset-2 focus-visible:ring-offset-surface-base font-[family-name:var(--font-geist-mono)]"
                 />
               </CardContent>
@@ -681,7 +555,7 @@ export default function TenantDetailPage() {
                 <Button
                   variant="danger"
                   size="sm"
-                  disabled={deleteConfirmText !== tenant.slug}
+                  disabled={deleteConfirmText !== groupId}
                   onClick={handleDelete}
                 >
                   <Trash2 className="h-4 w-4" />

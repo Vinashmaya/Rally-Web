@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { adminAuth, adminDb } from '@rally/firebase/admin';
+import { adminAuth, adminDb, requireRole, isVerifiedSession } from '@rally/firebase/admin';
+import { USER_ROLE_VALUES } from '@rally/firebase';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,6 +11,9 @@ export async function PUT(
   { params }: { params: Promise<{ uid: string }> },
 ) {
   try {
+    const auth = await requireRole('owner', 'general_manager');
+    if (!isVerifiedSession(auth)) return auth;
+
     const { uid } = await params;
     const body = await request.json();
 
@@ -23,7 +27,7 @@ export async function PUT(
     }
 
     // Validate role
-    const validRoles = ['salesperson', 'finance_manager', 'sales_manager', 'general_manager', 'principal'] as const;
+    const validRoles = USER_ROLE_VALUES;
     if (!validRoles.includes(role as typeof validRoles[number])) {
       return NextResponse.json(
         { error: `Invalid role. Must be one of: ${validRoles.join(', ')}` },
@@ -70,7 +74,7 @@ export async function PUT(
     }
 
     // Write audit log
-    await adminDb.collection('auditLog').add({
+    await adminDb.collection('auditLogs').add({
       action: 'user.role_changed',
       targetUid: uid,
       previousRole,

@@ -1,12 +1,16 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { provisionTenant } from '@rally/infra';
+import { requireSuperAdmin, isVerifiedSession } from '@rally/firebase/admin';
 
 export const dynamic = 'force-dynamic';
 
 // POST — Provision a new tenant (Cloudflare DNS + Plesk vhost + Firestore seeding)
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireSuperAdmin();
+    if (!isVerifiedSession(auth)) return auth;
+
     const body = await request.json();
 
     const { slug, groupName, principalEmail, principalName } = body as {

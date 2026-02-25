@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { adminDb, FieldValue } from '@rally/firebase/admin';
+import { adminDb, FieldValue, requireAuth, isVerifiedSession } from '@rally/firebase/admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,6 +12,9 @@ export async function POST(
   { params }: { params: Promise<{ listId: string }> },
 ) {
   try {
+    const auth = await requireAuth();
+    if (!isVerifiedSession(auth)) return auth;
+
     const { listId } = await params;
     const body = await request.json();
 
@@ -94,19 +97,21 @@ export async function POST(
 }
 
 // DELETE — Remove a vehicle from a list
+// Uses query param instead of body because Cloudflare strips DELETE request bodies
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ listId: string }> },
 ) {
   try {
-    const { listId } = await params;
-    const body = await request.json();
+    const auth = await requireAuth();
+    if (!isVerifiedSession(auth)) return auth;
 
-    const { vin } = body as { vin: string };
+    const { listId } = await params;
+    const vin = request.nextUrl.searchParams.get('vin');
 
     if (!vin) {
       return NextResponse.json(
-        { error: 'Missing required field: vin' },
+        { error: 'Missing required query param: vin' },
         { status: 400 },
       );
     }

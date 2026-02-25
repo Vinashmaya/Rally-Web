@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Card,
@@ -15,15 +15,12 @@ import {
 } from '@rally/ui';
 import type { FilterOption } from '@rally/ui';
 import type { ColumnDef } from '@tanstack/react-table';
-import { useTenants } from '@rally/firebase';
-import type { DealerGroup } from '@rally/firebase';
 import {
   Building2,
   Plus,
   Search,
   ExternalLink,
   MoreHorizontal,
-  AlertCircle,
   Play,
   Pause,
   Trash2,
@@ -54,29 +51,6 @@ function slugify(name: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
-}
-
-// ---------------------------------------------------------------------------
-// Helper: map DealerGroup → TenantRow
-// ---------------------------------------------------------------------------
-
-function mapGroupToTenantRow(group: DealerGroup): TenantRow {
-  const slug = slugify(group.name);
-  const createdDate = group.createdAt instanceof Date
-    ? group.createdAt
-    : new Date(group.createdAt);
-
-  return {
-    id: group.id ?? '',
-    slug,
-    groupName: group.name,
-    status: group.status as TenantRow['status'],
-    usersCount: 0,
-    vehiclesCount: 0,
-    storesCount: 0,
-    createdAt: createdDate.toISOString().split('T')[0] ?? '',
-    subdomain: `${slug}.rally.vin`,
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -223,14 +197,33 @@ export default function TenantsListPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
-  // Real Firestore data via useTenants hook
-  const { tenants: rawTenants, loading, error } = useTenants({});
+  // Fetch tenant data from server API (includes aggregated counts)
+  const [tenantRows, setTenantRows] = useState<TenantRow[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Map DealerGroup[] → TenantRow[]
-  const tenants: TenantRow[] = useMemo(
-    () => rawTenants.map(mapGroupToTenantRow),
-    [rawTenants],
-  );
+  useEffect(() => {
+    fetch('/api/admin/tenants')
+      .then((res) => res.json())
+      .then((json) => {
+        if (json.success && json.data) {
+          setTenantRows(
+            (json.data as Array<Record<string, unknown>>).map((t) => ({
+              id: (t.id as string) ?? '',
+              slug: slugify((t.name as string) ?? ''),
+              groupName: (t.name as string) ?? '',
+              status: (t.status as TenantRow['status']) ?? 'active',
+              usersCount: (t.usersCount as number) ?? 0,
+              vehiclesCount: (t.vehiclesCount as number) ?? 0,
+              storesCount: (t.storesCount as number) ?? 0,
+              createdAt: t.createdAt ? new Date(t.createdAt as string).toISOString().split('T')[0] ?? '' : '',
+              subdomain: `${slugify((t.name as string) ?? '')}.rally.vin`,
+            })),
+          );
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
 
   // Tenant action handler
   const handleTenantAction = useCallback(
@@ -353,14 +346,14 @@ export default function TenantsListPage() {
 
   // Filter by status
   const filteredTenants = useMemo(() => {
-    let result = [...tenants];
+    let result = [...tenantRows];
 
     if (statusFilter !== 'all') {
       result = result.filter((t) => t.status === statusFilter);
     }
 
     return result;
-  }, [tenants, statusFilter]);
+  }, [tenantRows, statusFilter]);
 
   // Filter option counts
   const filterOptionsWithCounts: FilterOption[] = useMemo(() => {
@@ -368,32 +361,15 @@ export default function TenantsListPage() {
       ...opt,
       count:
         opt.value === 'all'
-          ? tenants.length
-          : tenants.filter((t) => t.status === opt.value).length,
+          ? tenantRows.length
+          : tenantRows.filter((t) => t.status === opt.value).length,
     }));
-  }, [tenants]);
+  }, [tenantRows]);
 
   // Aggregate stats
-  const totalUsers = tenants.reduce((sum, t) => sum + t.usersCount, 0);
-  const totalVehicles = tenants.reduce((sum, t) => sum + t.vehiclesCount, 0);
-  const activeTenants = tenants.filter((t) => t.status === 'active').length;
-
-  // Error state
-  if (error) {
-    return (
-      <div className="p-6">
-        <Card>
-          <CardContent className="flex items-center gap-3 py-6">
-            <AlertCircle className="h-5 w-5 text-status-error shrink-0" />
-            <div>
-              <p className="text-sm font-medium text-text-primary">Failed to load tenants</p>
-              <p className="text-xs text-text-tertiary mt-1">{error.message}</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  const totalUsers = tenantRows.reduce((sum, t) => sum + t.usersCount, 0);
+  const totalVehicles = tenantRows.reduce((sum, t) => sum + t.vehiclesCount, 0);
+  const activeTenants = tenantRows.filter((t) => t.status === 'active').length;
 
   return (
     <div className="p-6 space-y-6">
@@ -402,7 +378,7 @@ export default function TenantsListPage() {
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold text-text-primary">Tenants</h1>
           <Badge variant="default" size="md">
-            {tenants.length}
+            {tenantRows.length}
           </Badge>
         </div>
         <Button

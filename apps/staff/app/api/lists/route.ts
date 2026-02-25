@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { adminDb } from '@rally/firebase/admin';
+import { adminDb, requireAuth, isVerifiedSession } from '@rally/firebase/admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,6 +9,9 @@ const COLLECTION = 'vehicleLists' as const;
 // POST — Create a new vehicle list
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireAuth();
+    if (!isVerifiedSession(auth)) return auth;
+
     const body = await request.json();
 
     const { name, color, icon, dealershipId, ownerId, ownerName } = body as {

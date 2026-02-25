@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { requireSuperAdmin, isVerifiedSession } from '@rally/firebase/admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,6 +9,8 @@ export const dynamic = 'force-dynamic';
 // For now, returns static data with the intent to wire real monitoring later
 export async function GET() {
   try {
+    const auth = await requireSuperAdmin();
+    if (!isVerifiedSession(auth)) return auth;
     const health = {
       cpu: { used: 23, label: 'CPU Usage' },
       ram: { usedGB: 8.2, totalGB: 24, label: 'RAM Usage' },
@@ -44,6 +47,9 @@ export async function GET() {
 // POST — Execute system actions (restart, stop, maintenance toggle)
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireSuperAdmin();
+    if (!isVerifiedSession(auth)) return auth;
+
     const body = await request.json();
 
     const { action, process: processName, enabled, message } = body as {

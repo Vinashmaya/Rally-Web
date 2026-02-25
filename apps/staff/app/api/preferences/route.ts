@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { adminDb } from '@rally/firebase/admin';
+import { adminDb, requireAuth, isVerifiedSession } from '@rally/firebase/admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,16 +15,20 @@ interface UserPreferences {
 // PUT — Update user preferences
 export async function PUT(request: NextRequest) {
   try {
+    const auth = await requireAuth();
+    if (!isVerifiedSession(auth)) return auth;
+
     const body = await request.json();
 
-    const { uid, preferences } = body as {
-      uid: string;
+    const { preferences } = body as {
       preferences: UserPreferences;
     };
 
-    if (!uid || !preferences || typeof preferences !== 'object') {
+    const uid = auth.uid; // Use verified UID, not user-supplied
+
+    if (!preferences || typeof preferences !== 'object') {
       return NextResponse.json(
-        { error: 'Missing required fields: uid, preferences (object)' },
+        { error: 'Missing required field: preferences (object)' },
         { status: 400 },
       );
     }

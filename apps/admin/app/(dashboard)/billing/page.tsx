@@ -246,6 +246,17 @@ export default function BillingPage() {
 
   return (
     <div className="p-6 space-y-6">
+      {/* ── Preview Banner ──────────────────────────────────────── */}
+      <div className="rounded-rally-lg border border-rally-gold/20 bg-rally-goldMuted px-4 py-3 flex items-center gap-3">
+        <BarChart3 className="h-4 w-4 text-rally-gold shrink-0" />
+        <div>
+          <p className="text-sm font-medium text-rally-gold">Preview Mode</p>
+          <p className="text-xs text-text-secondary">
+            Billing data shown below is sample data. Connect a payment provider to see real revenue metrics.
+          </p>
+        </div>
+      </div>
+
       {/* ── Header ──────────────────────────────────────────────── */}
       <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
         <div>

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { adminAuth, adminDb } from '@rally/firebase/admin';
+import { adminAuth, adminDb, requireSuperAdmin, isVerifiedSession } from '@rally/firebase/admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,6 +10,9 @@ export async function POST(
   { params }: { params: Promise<{ uid: string }> },
 ) {
   try {
+    const auth = await requireSuperAdmin();
+    if (!isVerifiedSession(auth)) return auth;
+
     const { uid } = await params;
 
     // Disable in Firebase Auth
@@ -26,7 +29,7 @@ export async function POST(
     }
 
     // Write audit log
-    await adminDb.collection('auditLog').add({
+    await adminDb.collection('auditLogs').add({
       action: 'user.disabled',
       targetUid: uid,
       timestamp: new Date().toISOString(),

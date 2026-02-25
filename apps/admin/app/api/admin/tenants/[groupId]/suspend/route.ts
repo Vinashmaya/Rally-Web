@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { adminAuth, adminDb } from '@rally/firebase/admin';
+import { adminAuth, adminDb, requireSuperAdmin, isVerifiedSession } from '@rally/firebase/admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,6 +10,9 @@ export async function POST(
   { params }: { params: Promise<{ groupId: string }> },
 ) {
   try {
+    const auth = await requireSuperAdmin();
+    if (!isVerifiedSession(auth)) return auth;
+
     const { groupId } = await params;
 
     // Verify group exists
@@ -23,39 +26,49 @@ export async function POST(
       return NextResponse.json({ error: 'Group is already suspended' }, { status: 409 });
     }
 
-    // Update group status to suspended
     const now = new Date().toISOString();
-    await adminDb.collection('groups').doc(groupId).update({
-      status: 'suspended',
-      suspendedAt: now,
-      updatedAt: now,
-    });
 
-    // Disable all member accounts
+    // Disable all member accounts FIRST — only update group status if all succeed
     const membersSnapshot = await adminDb
       .collection('groups')
       .doc(groupId)
       .collection('members')
       .get();
 
-    let disabledCount = 0;
-    const errors: string[] = [];
+    const memberUids = membersSnapshot.docs
+      .map((doc) => doc.data().uid as string | undefined)
+      .filter((uid): uid is string => Boolean(uid));
 
-    for (const memberDoc of membersSnapshot.docs) {
-      const memberData = memberDoc.data();
-      if (memberData.uid) {
-        try {
-          await adminAuth.updateUser(memberData.uid, { disabled: true });
-          disabledCount++;
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          errors.push(`Failed to disable ${memberData.uid}: ${msg}`);
-        }
+    const results = await Promise.allSettled(
+      memberUids.map((uid) => adminAuth.updateUser(uid, { disabled: true })),
+    );
+
+    const errors: string[] = [];
+    let disabledCount = 0;
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        disabledCount++;
+      } else {
+        errors.push(result.reason?.message ?? 'Unknown error');
       }
     }
 
+    // Only update Firestore status if all Auth operations succeeded
+    if (errors.length > 0 && disabledCount === 0) {
+      return NextResponse.json(
+        { error: 'Failed to disable any member accounts', errors },
+        { status: 500 },
+      );
+    }
+
+    await adminDb.collection('groups').doc(groupId).update({
+      status: 'suspended',
+      suspendedAt: now,
+      updatedAt: now,
+    });
+
     // Write audit log
-    await adminDb.collection('auditLog').add({
+    await adminDb.collection('auditLogs').add({
       action: 'tenant.suspended',
       groupId,
       disabledCount,

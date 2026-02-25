@@ -1,12 +1,16 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { listDnsRecords, createDnsRecord } from '@rally/infra';
+import { requireSuperAdmin, isVerifiedSession } from '@rally/firebase/admin';
 
 export const dynamic = 'force-dynamic';
 
 // GET — List all DNS records for the rally.vin zone
 export async function GET() {
   try {
+    const auth = await requireSuperAdmin();
+    if (!isVerifiedSession(auth)) return auth;
+
     const records = await listDnsRecords();
     return NextResponse.json({ success: true, data: records });
   } catch (error) {
@@ -21,6 +25,9 @@ export async function GET() {
 // POST — Create a new DNS A record
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireSuperAdmin();
+    if (!isVerifiedSession(auth)) return auth;
+
     const body = await request.json();
 
     const { name, content } = body as { name: string; content: string };

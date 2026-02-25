@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { adminDb } from '@rally/firebase/admin';
+import { adminDb, requireAuth, isVerifiedSession } from '@rally/firebase/admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,6 +12,9 @@ export async function PUT(
   { params }: { params: Promise<{ listId: string }> },
 ) {
   try {
+    const auth = await requireAuth();
+    if (!isVerifiedSession(auth)) return auth;
+
     const { listId } = await params;
     const body = await request.json();
 
@@ -56,6 +59,9 @@ export async function DELETE(
   { params }: { params: Promise<{ listId: string }> },
 ) {
   try {
+    const auth = await requireAuth();
+    if (!isVerifiedSession(auth)) return auth;
+
     const { listId } = await params;
 
     // Verify list exists
@@ -64,20 +70,27 @@ export async function DELETE(
       return NextResponse.json({ error: 'List not found' }, { status: 404 });
     }
 
-    // Delete all items in the list first
+    // Delete all items in the list first (batch limit: 500 ops)
     const itemsSnapshot = await adminDb
       .collection(COLLECTION)
       .doc(listId)
       .collection('items')
       .get();
 
-    const batch = adminDb.batch();
-    for (const itemDoc of itemsSnapshot.docs) {
-      batch.delete(itemDoc.ref);
+    const BATCH_LIMIT = 499;
+    const docs = itemsSnapshot.docs;
+
+    for (let i = 0; i < docs.length; i += BATCH_LIMIT) {
+      const chunk = docs.slice(i, i + BATCH_LIMIT);
+      const batch = adminDb.batch();
+      for (const doc of chunk) {
+        batch.delete(doc.ref);
+      }
+      await batch.commit();
     }
+
     // Delete the list document itself
-    batch.delete(adminDb.collection(COLLECTION).doc(listId));
-    await batch.commit();
+    await adminDb.collection(COLLECTION).doc(listId).delete();
 
     return NextResponse.json({
       success: true,

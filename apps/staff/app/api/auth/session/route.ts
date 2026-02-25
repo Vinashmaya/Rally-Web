@@ -26,8 +26,12 @@ export async function POST(request: NextRequest) {
     });
 
     return response;
-  } catch {
-    return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 });
+  } catch (error) {
+    console.error('[Session] Token verification failed:', error instanceof Error ? error.message : error);
+    return NextResponse.json(
+      { error: 'Invalid or expired token', detail: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 401 },
+    );
   }
 }
 

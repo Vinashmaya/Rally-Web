@@ -1,16 +1,35 @@
 import { headers } from 'next/headers';
+import { getAdminDb } from '@rally/firebase/admin';
+
+export const dynamic = 'force-dynamic';
 
 // Server component — no 'use client'
 // This is the public-facing landing/splash page for the dealer portal.
-// It reads the tenant slug from the middleware-set header.
+// It reads the tenant slug from the middleware-set header and looks up
+// the group config from Firestore for branding.
+
+async function getGroupBySlug(slug: string): Promise<{ name: string; logoUrl?: string } | null> {
+  try {
+    const snapshot = await getAdminDb()
+      .collection('groups')
+      .where('slug', '==', slug)
+      .limit(1)
+      .get();
+    if (snapshot.empty) return null;
+    const data = snapshot.docs[0]!.data();
+    return { name: data.name as string, logoUrl: data.logoUrl as string | undefined };
+  } catch {
+    return null;
+  }
+}
 
 export default async function PortalLandingPage() {
   const headersList = await headers();
   const tenantSlug = headersList.get('x-tenant-slug') ?? 'demo';
 
-  // TODO: Look up tenant config from Firestore to get display name, logo, etc.
-  // For now, derive a display-friendly name from the slug
-  const tenantDisplayName = tenantSlug
+  // Look up tenant from Firestore for proper branding
+  const group = await getGroupBySlug(tenantSlug);
+  const tenantDisplayName = group?.name ?? tenantSlug
     .split('-')
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');

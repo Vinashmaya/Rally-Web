@@ -86,6 +86,7 @@ export async function PUT(
     await adminDb.collection('auditLogs').add({
       action: 'user.role_changed',
       targetUid: uid,
+      actorUid: auth.uid,
       previousRole,
       newRole: role,
       timestamp: now,

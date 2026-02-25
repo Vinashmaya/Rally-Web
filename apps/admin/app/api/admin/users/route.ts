@@ -29,14 +29,16 @@ export async function GET() {
     const uidSet = new Set<string>();
     const memberships: MembershipDoc[] = membershipsSnapshot.docs.map((doc) => {
       const data = doc.data();
-      const uid = data.employeeUid as string;
+      // UID can be stored as a field OR extracted from the doc path:
+      // employees/{uid}/memberships/{storeId}
+      const uid = (data.employeeUid ?? data.uid ?? doc.ref.parent.parent?.id ?? '') as string;
       uidSet.add(uid);
       return {
         id: doc.id,
         employeeUid: uid,
         role: data.role as string,
         status: data.status as string,
-        storeId: data.storeId as string,
+        storeId: (data.storeId ?? data.dealershipId ?? doc.id) as string,
         groupId: data.groupId as string,
         joinedAt: data.joinedAt,
       };

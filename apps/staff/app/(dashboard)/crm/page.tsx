@@ -54,7 +54,7 @@ function relativeTime(date: Date): string {
 
 /** Map CrmSource to badge config. Falls back to 'default' for unknown sources. */
 const SOURCE_BADGE_CONFIG: Record<string, { variant: 'gold' | 'info' | 'success' | 'warning' | 'default'; label: string }> = {
-  driveentric: { variant: 'gold', label: 'DriveCentric' },
+  drivecentric: { variant: 'gold', label: 'DriveCentric' },
   elead: { variant: 'info', label: 'eLead' },
   manual: { variant: 'success', label: 'Manual' },
 } as const;

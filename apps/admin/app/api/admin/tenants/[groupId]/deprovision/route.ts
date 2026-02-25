@@ -15,16 +15,18 @@ export async function POST(
     if (!isVerifiedSession(auth)) return auth;
 
     const { groupId } = await params;
-    const body = await request.json();
+    const actorId = auth.uid;
 
-    const { reason } = body as { reason: string };
-    const actorId = auth.uid; // Use verified UID, not user-supplied
-
-    if (!reason) {
-      return NextResponse.json(
-        { error: 'Missing required field: reason' },
-        { status: 400 },
-      );
+    // Parse optional body — pages may send empty POST (no body).
+    // Default reason if not provided.
+    let reason = 'Deprovisioned by super admin';
+    try {
+      const body = await request.json();
+      if (body.reason && typeof body.reason === 'string') {
+        reason = body.reason;
+      }
+    } catch {
+      // Empty body is fine — use default reason
     }
 
     // Look up the group slug from Firestore

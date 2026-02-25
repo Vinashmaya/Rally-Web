@@ -50,6 +50,7 @@ export async function POST(
     await adminDb.collection('auditLogs').add({
       action: 'user.deactivated',
       targetUid: uid,
+      actorUid: auth.uid,
       email: userData?.email ?? 'unknown',
       timestamp: now,
       actorType: 'manager',

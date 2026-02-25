@@ -4,7 +4,13 @@ import { getAdminAuth } from '@rally/firebase/admin';
 
 export const dynamic = 'force-dynamic';
 
-// POST — Set session cookie after Firebase client sign-in
+// 14-day session — matches Firebase session cookie max (14 days)
+const SESSION_EXPIRY_SECONDS = 60 * 60 * 24 * 14;
+const SESSION_EXPIRY_MS = SESSION_EXPIRY_SECONDS * 1000;
+
+// POST — Create a Firebase session cookie after client sign-in.
+// The client sends a fresh ID token; we exchange it for a long-lived
+// session cookie that is verified via verifySessionCookie() in auth-guard.ts.
 export async function POST(request: NextRequest) {
   try {
     const { idToken } = await request.json();
@@ -13,16 +19,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing idToken' }, { status: 400 });
     }
 
-    // Verify the token is genuine before storing it
-    await getAdminAuth().verifyIdToken(idToken, true);
+    const sessionCookie = await getAdminAuth().createSessionCookie(idToken, {
+      expiresIn: SESSION_EXPIRY_MS,
+    });
 
     const response = NextResponse.json({ status: 'ok' });
-    response.cookies.set('__session', idToken, {
+    response.cookies.set('__session', sessionCookie, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/',
-      maxAge: 60 * 60 * 24 * 14, // 14 days
+      maxAge: SESSION_EXPIRY_SECONDS,
     });
 
     return response;

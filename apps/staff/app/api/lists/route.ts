@@ -14,19 +14,28 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
 
-    const { name, color, icon, dealershipId, ownerId, ownerName } = body as {
+    const { name, color, icon, ownerName } = body as {
       name: string;
       color: string;
       icon: string;
-      dealershipId: string;
-      ownerId: string;
       ownerName: string;
     };
 
-    if (!name || !color || !icon || !dealershipId || !ownerId || !ownerName) {
+    if (!name || !color || !icon || !ownerName) {
       return NextResponse.json(
-        { error: 'Missing required fields: name, color, icon, dealershipId, ownerId, ownerName' },
+        { error: 'Missing required fields: name, color, icon, ownerName' },
         { status: 400 },
+      );
+    }
+
+    // Tenant isolation: dealershipId and ownerId come from the verified session,
+    // never from the client body. This prevents cross-tenant list creation and
+    // ownership spoofing.
+    const dealershipId = auth.dealershipId;
+    if (!dealershipId) {
+      return NextResponse.json(
+        { error: 'Session missing dealershipId claim' },
+        { status: 403 },
       );
     }
 
@@ -38,7 +47,7 @@ export async function POST(request: NextRequest) {
       color,
       icon,
       dealershipId,
-      ownerId,
+      ownerId: auth.uid,
       ownerName,
       vehicleCount: 0,
       createdAt: now,

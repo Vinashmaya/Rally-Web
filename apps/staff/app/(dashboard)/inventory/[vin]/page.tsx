@@ -45,7 +45,7 @@ import {
   type VehicleCondition,
   type VehicleType,
 } from '@rally/firebase';
-import { usePermissionStore } from '@rally/services';
+import { usePermissionStore, useTenantStore } from '@rally/services';
 
 // ---------------------------------------------------------------------------
 // Detail Row — reusable key-value row for vehicle details
@@ -341,12 +341,13 @@ export default function VehicleDetailPage() {
   const params = useParams<{ vin: string }>();
   const router = useRouter();
   const { toast } = useToast();
+  const dealershipId = useTenantStore((s) => s.activeStore?.id ?? '');
 
   // Photo gallery state
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
 
-  // Firestore real-time document listener
-  const { data: vehicle, loading, error } = useVehicle(params.vin);
+  // Firestore real-time document listener (tenant-scoped)
+  const { data: vehicle, loading, error } = useVehicle(params.vin, dealershipId || undefined);
 
   // Surface errors via toast
   useEffect(() => {

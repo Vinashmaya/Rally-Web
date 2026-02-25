@@ -122,9 +122,13 @@ export async function POST(request: NextRequest) {
       throw firestoreError;
     }
 
+    // NOTE: tempPassword is intentionally NOT returned in the response.
+    // Returning plaintext passwords in API responses exposes them in
+    // DevTools, server logs, and monitoring. The manager sees a success
+    // confirmation; the invited user receives a password-reset email.
     return NextResponse.json({
       success: true,
-      data: { uid, email, tempPassword },
+      data: { uid, email, mustResetPassword: true },
     });
   } catch (error) {
     console.error('[API] User invite error:', error);

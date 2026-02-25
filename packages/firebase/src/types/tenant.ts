@@ -33,6 +33,7 @@ export interface GroupFeatureFlags {
 export interface DealerGroup {
   id?: string; // Firestore document ID
   name: string;
+  slug?: string; // URL-safe identifier for subdomain routing (e.g. 'gallatincdjr')
   ownerId: string;
   status: GroupStatus;
   createdAt: Date;
@@ -221,6 +222,7 @@ const groupFeatureFlagsSchema = z.object({
 export const dealerGroupSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(1),
+  slug: z.string().optional(),
   ownerId: z.string().min(1),
   status: z.enum(GROUP_STATUS_VALUES),
   createdAt: z.coerce.date(),

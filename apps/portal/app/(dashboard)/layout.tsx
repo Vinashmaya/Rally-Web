@@ -71,8 +71,7 @@ export default function PortalDashboardLayout({
   const displayName = profile?.displayName ?? user.displayName ?? 'User';
   const activeId = getActiveNavId(pathname);
 
-  // TODO: Read tenant name from Firestore tenant config based on x-tenant-slug header
-  const tenantName = currentStore?.name ?? 'Gallatin CDJR';
+  const tenantName = currentStore?.name ?? 'Dealer Portal';
 
   return (
     <div className="flex h-screen overflow-hidden">

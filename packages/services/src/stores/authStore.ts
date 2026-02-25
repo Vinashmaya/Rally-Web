@@ -138,13 +138,16 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
           isLoading: true,
         });
 
-        // Refresh session cookie (handles page reload, token refresh)
-        user.getIdToken().then((idToken) => {
+        // Refresh session cookie — force a fresh ID token so createSessionCookie()
+        // accepts it (requires token < 5 min old). Best-effort, non-blocking.
+        // With Firebase session cookies (14-day expiry), the existing cookie is
+        // still valid even if this refresh fails — it just resets the 14-day window.
+        user.getIdToken(true).then((idToken) => {
           fetch('/api/auth/session', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ idToken }),
-          }).catch(() => {}); // Best-effort, don't block
+          }).catch(() => {});
         }).catch(() => {});
 
         try {

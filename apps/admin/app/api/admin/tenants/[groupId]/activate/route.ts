@@ -30,13 +30,16 @@ export async function POST(
 
     // Re-enable all member accounts FIRST — only update group status if all succeed
     const membersSnapshot = await adminDb
-      .collection('groups')
-      .doc(groupId)
-      .collection('members')
+      .collectionGroup('memberships')
+      .where('groupId', '==', groupId)
+      .where('status', '==', 'active')
       .get();
 
     const memberUids = membersSnapshot.docs
-      .map((doc) => doc.data().uid as string | undefined)
+      .map((doc) => {
+        const data = doc.data();
+        return (data.employeeUid ?? data.uid ?? doc.ref.parent.parent?.id) as string | undefined;
+      })
       .filter((uid): uid is string => Boolean(uid));
 
     const results = await Promise.allSettled(

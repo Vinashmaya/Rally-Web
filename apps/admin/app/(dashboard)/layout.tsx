@@ -1,7 +1,9 @@
 'use client';
 
+import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Sidebar, type NavItem } from '@rally/ui';
+import { useAuthStore } from '@rally/services';
 import {
   LayoutDashboard,
   Building2,
@@ -40,6 +42,36 @@ export default function AdminDashboardLayout({
   const pathname = usePathname();
   const router = useRouter();
 
+  const user = useAuthStore((s) => s.firebaseUser);
+  const loading = useAuthStore((s) => s.isLoading);
+  const isSuperAdmin = useAuthStore((s) => s.isSuperAdmin);
+
+  // Redirect if not authenticated or not super admin
+  useEffect(() => {
+    if (!loading && (!user || !isSuperAdmin)) {
+      router.push('/login');
+    }
+  }, [user, loading, isSuperAdmin, router]);
+
+  // Loading state — Rally branded spinner
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <span className="text-2xl font-bold font-mono text-rally-gold">RALLY</span>
+          <div className="h-1 w-24 overflow-hidden rounded-full bg-surface-overlay">
+            <div className="h-full w-1/2 animate-pulse rounded-full bg-rally-gold" />
+          </div>
+          <span className="text-xs text-text-tertiary">Super Admin</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user || !isSuperAdmin) {
+    return null;
+  }
+
   // Determine active nav item from pathname
   const activeId =
     NAV_ITEMS.find((item) =>
@@ -54,9 +86,24 @@ export default function AdminDashboardLayout({
         items={NAV_ITEMS}
         activeId={activeId}
         onNavigate={(item) => router.push(item.href)}
+        user={{
+          name: user.displayName ?? user.email ?? 'Super Admin',
+          role: 'Super Admin',
+          avatarUrl: user.photoURL ?? undefined,
+        }}
+        logo={
+          <div className="flex flex-col">
+            <span className="text-lg font-bold text-rally-gold tracking-tight">
+              Rally
+            </span>
+            <span className="text-[10px] text-text-tertiary -mt-0.5">
+              Super Admin
+            </span>
+          </div>
+        }
       />
       <main className="flex-1 overflow-y-auto">
-        {children}
+        <div className="p-6">{children}</div>
       </main>
     </div>
   );

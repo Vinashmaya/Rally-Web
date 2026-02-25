@@ -163,7 +163,7 @@ export default function ManageDashboardPage() {
   const dealerUser = useAuthStore((s) => s.dealerUser);
   const activeStore = useTenantStore((s) => s.activeStore);
 
-  const dealershipId = dealerUser?.dealershipId ?? '';
+  const dealershipId = activeStore?.id ?? dealerUser?.dealershipId ?? '';
 
   // ── Data hooks ─────────────────────────────────────────────────
   const { users, loading: usersLoading } = useUsers({ dealershipId });

@@ -169,7 +169,7 @@ interface ApiUser {
 function mapApiUserToSystemUser(apiUser: ApiUser): SystemUser {
   return {
     id: apiUser.id,
-    email: apiUser.email || `${apiUser.id}@rally.vin`,
+    email: apiUser.email || 'No email on file',
     displayName: apiUser.displayName || apiUser.id,
     role: (apiUser.role ?? 'salesperson') as UserRole,
     dealershipId: apiUser.dealershipId,

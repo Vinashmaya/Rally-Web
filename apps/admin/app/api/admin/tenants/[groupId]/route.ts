@@ -35,18 +35,16 @@ export async function GET(
       ...doc.data(),
     }));
 
-    // Count users who belong to this group (employees with memberships in this group)
+    // Count users who belong to this group (via memberships collection group)
     let userCount = 0;
     try {
-      // Check for members subcollection (used by suspend/activate routes)
       const membersSnapshot = await adminDb
-        .collection('groups')
-        .doc(groupId)
-        .collection('members')
+        .collectionGroup('memberships')
+        .where('groupId', '==', groupId)
+        .where('status', '==', 'active')
         .get();
       userCount = membersSnapshot.size;
     } catch {
-      // Members collection may not exist yet
       userCount = 0;
     }
 

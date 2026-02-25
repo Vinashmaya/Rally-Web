@@ -43,6 +43,11 @@ async function getSessionCookie(): Promise<string | undefined> {
 
 // ---------------------------------------------------------------------------
 // Core: verify __session cookie → decoded token + claims
+// Uses verifySessionCookie (not verifyIdToken) because the session route
+// creates a proper Firebase session cookie via createSessionCookie().
+// The `true` flag enables revocation checking — if the user's refresh
+// tokens are revoked (password change, account disable), the session
+// cookie is immediately invalidated.
 // ---------------------------------------------------------------------------
 
 export async function verifySession(): Promise<VerifiedSession | null> {
@@ -51,7 +56,7 @@ export async function verifySession(): Promise<VerifiedSession | null> {
 
     if (!sessionCookie) return null;
 
-    const token = await getAdminAuth().verifyIdToken(sessionCookie, true);
+    const token = await getAdminAuth().verifySessionCookie(sessionCookie, true);
 
     const claims = token as DecodedIdToken & {
       groupId?: string;

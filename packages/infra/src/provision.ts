@@ -334,22 +334,33 @@ export async function provisionTenant(params: {
       // Set custom claims for role-based access
       await auth.setCustomUserClaims(principalUid, {
         groupId,
-        role: 'principal',
+        role: 'owner',
       });
 
-      // Write user document to Firestore
+      // Write user doc to users/{uid} (read by authStore)
+      await db.collection('users').doc(principalUid).set({
+        email: principalEmail,
+        displayName: principalName,
+        role: 'owner',
+        dealershipId: groupId,
+        createdAt: new Date().toISOString(),
+      });
+
+      // Write membership doc to employees/{uid}/memberships/{groupId}
+      // (read by useTenantStore and useAllUsers collection group query)
       await db
-        .collection('groups')
-        .doc(groupId!)
-        .collection('members')
+        .collection('employees')
         .doc(principalUid)
+        .collection('memberships')
+        .doc(groupId!)
         .set({
-          uid: principalUid,
-          email: principalEmail,
-          displayName: principalName,
-          role: 'principal',
+          employeeUid: principalUid,
+          storeId: groupId,
+          groupId: groupId!,
+          role: 'owner',
           status: 'active',
-          createdAt: new Date().toISOString(),
+          isPrimary: true,
+          joinedAt: new Date().toISOString(),
         });
 
       markStep(steps, 'create_principal_user', 'completed');
@@ -375,7 +386,7 @@ export async function provisionTenant(params: {
     // -----------------------------------------------------------------------
     markStep(steps, 'write_audit_log', 'running');
     try {
-      await db.collection('auditLog').add({
+      await db.collection('auditLogs').add({
         action: 'tenant.provisioned',
         groupId,
         slug,
@@ -509,21 +520,23 @@ export async function deprovisionTenant(params: {
     // -----------------------------------------------------------------------
     markStep(steps, 'disable_members', 'running');
     try {
+      // Query memberships collection group for all members of this group
       const membersSnapshot = await db
-        .collection('groups')
-        .doc(groupId)
-        .collection('members')
+        .collectionGroup('memberships')
+        .where('groupId', '==', groupId)
+        .where('status', '==', 'active')
         .get();
 
       const disablePromises = membersSnapshot.docs.map(async (memberDoc) => {
         const memberData = memberDoc.data();
-        if (memberData.uid) {
+        const memberUid = memberData.employeeUid ?? memberData.uid;
+        if (memberUid) {
           try {
-            await auth.updateUser(memberData.uid, { disabled: true });
+            await auth.updateUser(memberUid, { disabled: true });
           } catch {
             // User may already be deleted — log and continue
             console.error(
-              `[Deprovision] Failed to disable user ${memberData.uid}`,
+              `[Deprovision] Failed to disable user ${memberUid}`,
             );
           }
         }
@@ -545,7 +558,7 @@ export async function deprovisionTenant(params: {
     // -----------------------------------------------------------------------
     markStep(steps, 'write_audit_log', 'running');
     try {
-      await db.collection('auditLog').add({
+      await db.collection('auditLogs').add({
         action: 'tenant.deprovisioned',
         groupId,
         slug,

@@ -24,10 +24,15 @@ export async function PUT(
       icon?: string;
     };
 
-    // Verify list exists
+    // Verify list exists and belongs to caller's dealership
     const listDoc = await adminDb.collection(COLLECTION).doc(listId).get();
     if (!listDoc.exists) {
       return NextResponse.json({ error: 'List not found' }, { status: 404 });
+    }
+
+    const listData = listDoc.data();
+    if (auth.dealershipId && listData?.dealershipId !== auth.dealershipId) {
+      return NextResponse.json({ error: 'Forbidden: list belongs to a different dealership' }, { status: 403 });
     }
 
     const updateData: Record<string, string> = {
@@ -64,10 +69,15 @@ export async function DELETE(
 
     const { listId } = await params;
 
-    // Verify list exists
+    // Verify list exists and belongs to caller's dealership
     const listDoc = await adminDb.collection(COLLECTION).doc(listId).get();
     if (!listDoc.exists) {
       return NextResponse.json({ error: 'List not found' }, { status: 404 });
+    }
+
+    const listData = listDoc.data();
+    if (auth.dealershipId && listData?.dealershipId !== auth.dealershipId) {
+      return NextResponse.json({ error: 'Forbidden: list belongs to a different dealership' }, { status: 403 });
     }
 
     // Delete all items in the list first (batch limit: 500 ops)

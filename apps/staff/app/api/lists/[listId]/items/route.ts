@@ -18,27 +18,31 @@ export async function POST(
     const { listId } = await params;
     const body = await request.json();
 
-    const { vin, stockNumber, year, make, model, trim, addedBy } = body as {
+    const { vin, stockNumber, year, make, model, trim } = body as {
       vin: string;
       stockNumber: string;
       year: number;
       make: string;
       model: string;
       trim?: string;
-      addedBy: string;
     };
 
-    if (!vin || !stockNumber || !year || !make || !model || !addedBy) {
+    if (!vin || !stockNumber || !year || !make || !model) {
       return NextResponse.json(
-        { error: 'Missing required fields: vin, stockNumber, year, make, model, addedBy' },
+        { error: 'Missing required fields: vin, stockNumber, year, make, model' },
         { status: 400 },
       );
     }
 
-    // Verify list exists
+    // Verify list exists and belongs to caller's dealership
     const listDoc = await adminDb.collection(COLLECTION).doc(listId).get();
     if (!listDoc.exists) {
       return NextResponse.json({ error: 'List not found' }, { status: 404 });
+    }
+
+    const listData = listDoc.data();
+    if (auth.dealershipId && listData?.dealershipId !== auth.dealershipId) {
+      return NextResponse.json({ error: 'Forbidden: list belongs to a different dealership' }, { status: 403 });
     }
 
     // Check if vehicle is already in the list
@@ -71,7 +75,7 @@ export async function POST(
       make,
       model,
       trim: trim ?? null,
-      addedBy,
+      addedBy: auth.uid,
       addedAt: now,
     };
 
@@ -116,10 +120,15 @@ export async function DELETE(
       );
     }
 
-    // Verify list exists
+    // Verify list exists and belongs to caller's dealership
     const listDoc = await adminDb.collection(COLLECTION).doc(listId).get();
     if (!listDoc.exists) {
       return NextResponse.json({ error: 'List not found' }, { status: 404 });
+    }
+
+    const listData = listDoc.data();
+    if (auth.dealershipId && listData?.dealershipId !== auth.dealershipId) {
+      return NextResponse.json({ error: 'Forbidden: list belongs to a different dealership' }, { status: 403 });
     }
 
     // Find the item by VIN

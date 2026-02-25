@@ -90,6 +90,7 @@ async function loadGroup(groupId: string): Promise<DealerGroup | null> {
     return {
       id: groupDoc.id,
       name: data.name,
+      slug: data.slug ?? '',
       ownerId: data.ownerId,
       status: data.status,
       createdAt: data.createdAt?.toDate?.() ?? new Date(data.createdAt),

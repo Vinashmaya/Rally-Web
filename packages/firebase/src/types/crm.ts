@@ -7,13 +7,13 @@ import { z } from 'zod';
 // CrmSource — matches iOS CrmCustomer.crmSource enum
 // ---------------------------------------------------------------------------
 
-export type CrmSource = 'driveentric' | 'elead' | 'manual';
+export type CrmSource = 'drivecentric' | 'elead' | 'manual';
 
-export const CRM_SOURCE_VALUES = ['driveentric', 'elead', 'manual'] as const;
+export const CRM_SOURCE_VALUES = ['drivecentric', 'elead', 'manual'] as const;
 
 /** Display names for CrmSource */
 export const CRM_SOURCE_DISPLAY: Record<CrmSource, string> = {
-  driveentric: 'DriveCentric',
+  drivecentric: 'DriveCentric',
   elead: 'eLead',
   manual: 'Manual Entry',
 } as const;

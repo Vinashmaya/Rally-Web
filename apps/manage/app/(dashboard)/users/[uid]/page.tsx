@@ -346,7 +346,7 @@ export default function UserDetailPage() {
         <CardContent>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-0">
             {PERMISSION_KEYS.map((key) => {
-              const granted = user.permissions[key];
+              const granted = user.permissions?.[key] ?? false;
               return (
                 <div
                   key={key}

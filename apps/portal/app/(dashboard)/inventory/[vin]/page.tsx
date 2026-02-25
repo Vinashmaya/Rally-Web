@@ -244,8 +244,8 @@ export default function PortalVehicleDetailPage() {
   // Photo gallery state
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
 
-  // Firestore real-time document listener
-  const { data: vehicle, loading, error } = useVehicle(params.vin);
+  // Firestore real-time document listener (tenant-scoped)
+  const { data: vehicle, loading, error } = useVehicle(params.vin, dealershipId || undefined);
 
   // Activity history for this vehicle
   const { activities, loading: activitiesLoading } = useActivities({

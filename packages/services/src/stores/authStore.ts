@@ -129,6 +129,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   // ---------------------------------------------------------------------------
   initialize: () => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      console.log('[AuthStore] onAuthStateChanged fired, user:', user ? user.uid : 'null');
       if (user) {
         // User logged in
         set({
@@ -137,12 +138,14 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
           isSuperAdmin: isSuperAdmin(user.uid),
           isLoading: true,
         });
+        console.log('[AuthStore] State set, isLoading: true. Starting data load...');
 
         // Refresh session cookie — force a fresh ID token so createSessionCookie()
         // accepts it (requires token < 5 min old). Best-effort, non-blocking.
         // With Firebase session cookies (14-day expiry), the existing cookie is
         // still valid even if this refresh fails — it just resets the 14-day window.
         user.getIdToken(true).then((idToken) => {
+          console.log('[AuthStore] Got fresh ID token, refreshing session cookie...');
           fetch('/api/auth/session', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -152,7 +155,9 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
         try {
           // Load DealerUser from Firestore users/{uid}
+          console.log('[AuthStore] Calling getDoc for users/' + user.uid + '...');
           const userDoc = await getDoc(doc(db, 'users', user.uid));
+          console.log('[AuthStore] getDoc returned, exists:', userDoc.exists());
           if (userDoc.exists()) {
             const data = userDoc.data();
             const dealerUser: DealerUser = {

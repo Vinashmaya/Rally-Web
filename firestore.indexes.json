@@ -90,13 +90,6 @@
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "stockNumber", "order": "ASCENDING" }
       ]
-    },
-    {
-      "collectionGroup": "memberships",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        { "fieldPath": "joinedAt", "order": "DESCENDING" }
-      ]
     }
   ],
   "fieldOverrides": []

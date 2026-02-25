@@ -3,6 +3,8 @@
 import { useState, useMemo } from 'react';
 import {
   Badge,
+  Card,
+  CardContent,
   Input,
   EmptyState,
   FilterBar,
@@ -10,10 +12,13 @@ import {
 } from '@rally/ui';
 import type { FilterOption } from '@rally/ui';
 import type { ColumnDef } from '@tanstack/react-table';
+import { useAllVehicles } from '@rally/firebase';
+import type { Vehicle, VehicleStatus } from '@rally/firebase';
 import {
   Car,
   Search,
   Image as ImageIcon,
+  AlertCircle,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -29,7 +34,7 @@ interface SystemVehicle {
   model: string;
   trim?: string;
   color?: string;
-  status: VehicleActivityStatus;
+  status: VehicleDisplayStatus;
   daysOnLot: number;
   dealershipId: string;
   primaryPhotoUrl?: string;
@@ -37,35 +42,52 @@ interface SystemVehicle {
   tenantSlug: string;
 }
 
-type VehicleActivityStatus = 'available' | 'testDrive' | 'showVideo' | 'offLot' | 'sold';
+type VehicleDisplayStatus = 'available' | 'testDrive' | 'showVideo' | 'offLot' | 'sold' | VehicleStatus;
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const STATUS_DISPLAY: Record<VehicleActivityStatus, string> = {
+const STATUS_DISPLAY: Record<string, string> = {
   available: 'Available',
   testDrive: 'Test Drive',
   showVideo: 'Showing',
   offLot: 'Off Lot',
   sold: 'Sold',
+  incoming: 'Incoming',
+  intake: 'Intake',
+  prep: 'In Prep',
+  frontline: 'Frontline',
+  service: 'Service',
+  delivery: 'Delivery',
+  offsite: 'Off-Site',
+  archived: 'Archived',
 } as const;
 
-const STATUS_COLORS: Record<VehicleActivityStatus, string> = {
+const STATUS_COLORS: Record<string, string> = {
   available: 'bg-[#22C55E]/15 text-[#22C55E] border-[#22C55E]/30',
   testDrive: 'bg-[#8B5CF6]/15 text-[#8B5CF6] border-[#8B5CF6]/30',
   showVideo: 'bg-[#3B82F6]/15 text-[#3B82F6] border-[#3B82F6]/30',
   offLot: 'bg-[#F97316]/15 text-[#F97316] border-[#F97316]/30',
   sold: 'bg-[#EF4444]/15 text-[#EF4444] border-[#EF4444]/30',
+  incoming: 'bg-[#A855F7]/15 text-[#A855F7] border-[#A855F7]/30',
+  intake: 'bg-[#F97316]/15 text-[#F97316] border-[#F97316]/30',
+  prep: 'bg-[#EAB308]/15 text-[#EAB308] border-[#EAB308]/30',
+  frontline: 'bg-[#22C55E]/15 text-[#22C55E] border-[#22C55E]/30',
+  service: 'bg-[#EF4444]/15 text-[#EF4444] border-[#EF4444]/30',
+  delivery: 'bg-[#14B8A6]/15 text-[#14B8A6] border-[#14B8A6]/30',
+  offsite: 'bg-[#6B7280]/15 text-[#6B7280] border-[#6B7280]/30',
+  archived: 'bg-[#6B7280]/15 text-[#6B7280] border-[#6B7280]/30',
 } as const;
 
 const FILTER_OPTIONS: FilterOption[] = [
   { value: 'all', label: 'All' },
-  { value: 'available', label: 'Available' },
-  { value: 'testDrive', label: 'Test Drive' },
-  { value: 'showVideo', label: 'Showing' },
-  { value: 'offLot', label: 'Off Lot' },
+  { value: 'frontline', label: 'Frontline' },
+  { value: 'incoming', label: 'Incoming' },
+  { value: 'prep', label: 'In Prep' },
+  { value: 'service', label: 'Service' },
   { value: 'sold', label: 'Sold' },
+  { value: 'offsite', label: 'Off-Site' },
 ] as const;
 
 const TENANT_COLORS: Record<string, string> = {
@@ -76,42 +98,36 @@ const TENANT_COLORS: Record<string, string> = {
 } as const;
 
 // ---------------------------------------------------------------------------
-// Mock Data — 24 vehicles across 4 tenants
+// Helper: map Vehicle → SystemVehicle
 // ---------------------------------------------------------------------------
 
-const MOCK_VEHICLES: SystemVehicle[] = [
-  // Gallatin CDJR
-  { id: 'v-001', vin: '1C4RJFBG9LC123456', stockNumber: 'G2401', year: 2024, make: 'Jeep', model: 'Grand Cherokee', trim: 'Limited', color: 'Diamond Black', status: 'available', daysOnLot: 12, dealershipId: 'gallatin-cdjr', tenantName: 'Gallatin CDJR', tenantSlug: 'gallatin-cdjr', primaryPhotoUrl: undefined },
-  { id: 'v-002', vin: '2C3CDXCT5NH234567', stockNumber: 'G2402', year: 2024, make: 'Dodge', model: 'Charger', trim: 'R/T', color: 'Torred', status: 'testDrive', daysOnLot: 8, dealershipId: 'gallatin-cdjr', tenantName: 'Gallatin CDJR', tenantSlug: 'gallatin-cdjr' },
-  { id: 'v-003', vin: '1C6SRFFT9PN345678', stockNumber: 'G2403', year: 2024, make: 'Ram', model: '1500', trim: 'Laramie', color: 'Granite Crystal', status: 'available', daysOnLot: 45, dealershipId: 'gallatin-cdjr', tenantName: 'Gallatin CDJR', tenantSlug: 'gallatin-cdjr' },
-  { id: 'v-004', vin: '3C6UR5DL7PG456789', stockNumber: 'G2404', year: 2024, make: 'Ram', model: '2500', trim: 'Big Horn', color: 'Patriot Blue', status: 'offLot', daysOnLot: 32, dealershipId: 'gallatin-cdjr', tenantName: 'Gallatin CDJR', tenantSlug: 'gallatin-cdjr' },
-  { id: 'v-005', vin: 'ZACNRFBV5PPP56789', stockNumber: 'G2405', year: 2024, make: 'Chrysler', model: 'Pacifica', trim: 'Touring L', color: 'Bright White', status: 'sold', daysOnLot: 67, dealershipId: 'gallatin-cdjr', tenantName: 'Gallatin CDJR', tenantSlug: 'gallatin-cdjr' },
-  { id: 'v-006', vin: '1C4PJXDG2PW567890', stockNumber: 'G2406', year: 2024, make: 'Jeep', model: 'Wrangler', trim: 'Rubicon', color: 'Sarge Green', status: 'showVideo', daysOnLot: 5, dealershipId: 'gallatin-cdjr', tenantName: 'Gallatin CDJR', tenantSlug: 'gallatin-cdjr' },
+function mapVehicleToSystemVehicle(vehicle: Vehicle): SystemVehicle {
+  // Calculate daysOnLot from addedToInventoryAt if not present on the doc
+  let daysOnLot = vehicle.daysOnLot ?? 0;
+  if (!vehicle.daysOnLot && vehicle.addedToInventoryAt) {
+    const added = vehicle.addedToInventoryAt instanceof Date
+      ? vehicle.addedToInventoryAt
+      : new Date(vehicle.addedToInventoryAt);
+    daysOnLot = Math.max(0, Math.floor((Date.now() - added.getTime()) / (1000 * 60 * 60 * 24)));
+  }
 
-  // Music City Toyota
-  { id: 'v-007', vin: '4T1BZ1HK5LU678901', stockNumber: 'MC3001', year: 2025, make: 'Toyota', model: 'Camry', trim: 'XSE', color: 'Celestial Silver', status: 'available', daysOnLot: 14, dealershipId: 'music-city-toyota', tenantName: 'Music City Toyota', tenantSlug: 'music-city-toyota' },
-  { id: 'v-008', vin: '5TDKZ3DC8LS789012', stockNumber: 'MC3002', year: 2025, make: 'Toyota', model: 'Highlander', trim: 'XLE', color: 'Magnetic Gray', status: 'available', daysOnLot: 22, dealershipId: 'music-city-toyota', tenantName: 'Music City Toyota', tenantSlug: 'music-city-toyota' },
-  { id: 'v-009', vin: 'JTDKN3DU9L5890123', stockNumber: 'MC3003', year: 2025, make: 'Toyota', model: 'Prius', trim: 'Limited', color: 'Wind Chill Pearl', status: 'testDrive', daysOnLot: 3, dealershipId: 'music-city-toyota', tenantName: 'Music City Toyota', tenantSlug: 'music-city-toyota' },
-  { id: 'v-010', vin: '5TFBY5F11LX901234', stockNumber: 'MC3004', year: 2025, make: 'Toyota', model: 'Tundra', trim: 'TRD Pro', color: 'Solar Octane', status: 'available', daysOnLot: 91, dealershipId: 'music-city-toyota', tenantName: 'Music City Toyota', tenantSlug: 'music-city-toyota' },
-  { id: 'v-011', vin: '2T1BURHE9LC012345', stockNumber: 'MC3005', year: 2025, make: 'Toyota', model: 'Corolla', trim: 'SE', color: 'Blueprint', status: 'sold', daysOnLot: 28, dealershipId: 'music-city-toyota', tenantName: 'Music City Toyota', tenantSlug: 'music-city-toyota' },
-  { id: 'v-012', vin: 'JTEBU5JR5P5123456', stockNumber: 'MC3006', year: 2025, make: 'Toyota', model: '4Runner', trim: 'TRD Off-Road', color: 'Lunar Rock', status: 'showVideo', daysOnLot: 7, dealershipId: 'music-city-toyota', tenantName: 'Music City Toyota', tenantSlug: 'music-city-toyota' },
-
-  // Franklin Chevrolet
-  { id: 'v-013', vin: '1G1YC2D40P5234567', stockNumber: 'FC5501', year: 2025, make: 'Chevrolet', model: 'Corvette', trim: 'Stingray', color: 'Torch Red', status: 'available', daysOnLot: 19, dealershipId: 'franklin-chevrolet', tenantName: 'Franklin Chevrolet', tenantSlug: 'franklin-chevrolet' },
-  { id: 'v-014', vin: '3GCUDED00PG345678', stockNumber: 'FC5502', year: 2025, make: 'Chevrolet', model: 'Silverado', trim: 'High Country', color: 'Black', status: 'testDrive', daysOnLot: 11, dealershipId: 'franklin-chevrolet', tenantName: 'Franklin Chevrolet', tenantSlug: 'franklin-chevrolet' },
-  { id: 'v-015', vin: '1G1FE6S09P0456789', stockNumber: 'FC5503', year: 2025, make: 'Chevrolet', model: 'Camaro', trim: 'SS', color: 'Rally Green', status: 'available', daysOnLot: 55, dealershipId: 'franklin-chevrolet', tenantName: 'Franklin Chevrolet', tenantSlug: 'franklin-chevrolet' },
-  { id: 'v-016', vin: '1GCVKNEK7PZ567890', stockNumber: 'FC5504', year: 2025, make: 'Chevrolet', model: 'Tahoe', trim: 'Z71', color: 'Empire Beige', status: 'offLot', daysOnLot: 38, dealershipId: 'franklin-chevrolet', tenantName: 'Franklin Chevrolet', tenantSlug: 'franklin-chevrolet' },
-  { id: 'v-017', vin: '1G1RC6S50P0678901', stockNumber: 'FC5505', year: 2025, make: 'Chevrolet', model: 'Malibu', trim: 'RS', color: 'Silver Ice', status: 'sold', daysOnLot: 42, dealershipId: 'franklin-chevrolet', tenantName: 'Franklin Chevrolet', tenantSlug: 'franklin-chevrolet' },
-  { id: 'v-018', vin: '1GNLVGED4PJ789012', stockNumber: 'FC5506', year: 2025, make: 'Chevrolet', model: 'Traverse', trim: 'LT', color: 'Summit White', status: 'available', daysOnLot: 25, dealershipId: 'franklin-chevrolet', tenantName: 'Franklin Chevrolet', tenantSlug: 'franklin-chevrolet' },
-
-  // Hendersonville Ford
-  { id: 'v-019', vin: '1FTFW1E80PFB89012', stockNumber: 'HF7701', year: 2025, make: 'Ford', model: 'F-150', trim: 'Lariat', color: 'Atlas Blue', status: 'available', daysOnLot: 16, dealershipId: 'hendersonville-ford', tenantName: 'Hendersonville Ford', tenantSlug: 'hendersonville-ford' },
-  { id: 'v-020', vin: '1FM5K8GC7PGA90123', stockNumber: 'HF7702', year: 2025, make: 'Ford', model: 'Explorer', trim: 'ST', color: 'Rapid Red', status: 'testDrive', daysOnLot: 9, dealershipId: 'hendersonville-ford', tenantName: 'Hendersonville Ford', tenantSlug: 'hendersonville-ford' },
-  { id: 'v-021', vin: '3FMCR9B69PRE01234', stockNumber: 'HF7703', year: 2025, make: 'Ford', model: 'Bronco Sport', trim: 'Badlands', color: 'Cactus Gray', status: 'available', daysOnLot: 73, dealershipId: 'hendersonville-ford', tenantName: 'Hendersonville Ford', tenantSlug: 'hendersonville-ford' },
-  { id: 'v-022', vin: '1FMSK8DH5PGB12345', stockNumber: 'HF7704', year: 2025, make: 'Ford', model: 'Expedition', trim: 'King Ranch', color: 'Star White', status: 'showVideo', daysOnLot: 4, dealershipId: 'hendersonville-ford', tenantName: 'Hendersonville Ford', tenantSlug: 'hendersonville-ford' },
-  { id: 'v-023', vin: '1FA6P8TH5P5523456', stockNumber: 'HF7705', year: 2025, make: 'Ford', model: 'Mustang', trim: 'GT', color: 'Grabber Blue', status: 'offLot', daysOnLot: 21, dealershipId: 'hendersonville-ford', tenantName: 'Hendersonville Ford', tenantSlug: 'hendersonville-ford' },
-  { id: 'v-024', vin: '1FMEE5DP4PLA34567', stockNumber: 'HF7706', year: 2025, make: 'Ford', model: 'Escape', trim: 'Titanium', color: 'Carbonized Gray', status: 'sold', daysOnLot: 36, dealershipId: 'hendersonville-ford', tenantName: 'Hendersonville Ford', tenantSlug: 'hendersonville-ford' },
-] as const;
+  return {
+    id: vehicle.id ?? vehicle.vin,
+    vin: vehicle.vin,
+    stockNumber: vehicle.stockNumber,
+    year: vehicle.year,
+    make: vehicle.make,
+    model: vehicle.model,
+    trim: vehicle.trim,
+    color: vehicle.exteriorColor,
+    status: vehicle.status as VehicleDisplayStatus,
+    daysOnLot,
+    dealershipId: vehicle.dealershipId,
+    primaryPhotoUrl: vehicle.primaryPhotoUrl,
+    tenantName: vehicle.dealershipId,
+    tenantSlug: vehicle.dealershipId,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -216,10 +232,11 @@ const columns: ColumnDef<SystemVehicle, unknown>[] = [
     header: 'Status',
     cell: ({ row }) => {
       const status = row.original.status;
-      const colorClass = STATUS_COLORS[status] ?? '';
+      const colorClass = STATUS_COLORS[status] ?? 'bg-[#6B7280]/15 text-[#6B7280] border-[#6B7280]/30';
+      const isActive = status !== 'available' && status !== 'sold' && status !== 'frontline' && status !== 'archived';
       return (
         <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium border ${colorClass}`}>
-          {status !== 'available' && status !== 'sold' && (
+          {isActive && (
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-current animate-rally-pulse" />
           )}
           {STATUS_DISPLAY[status] ?? status}
@@ -261,10 +278,15 @@ const columns: ColumnDef<SystemVehicle, unknown>[] = [
 export default function SystemVehiclesPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [search, setSearch] = useState('');
-  const [loading, setLoading] = useState(false);
 
-  // TODO: Replace with real Firestore collectionGroup query across all tenants
-  const vehicles = MOCK_VEHICLES as unknown as SystemVehicle[];
+  // Real Firestore data via useAllVehicles hook
+  const { allVehicles: rawVehicles, loading, error } = useAllVehicles({});
+
+  // Map Vehicle[] → SystemVehicle[]
+  const vehicles: SystemVehicle[] = useMemo(
+    () => rawVehicles.map(mapVehicleToSystemVehicle),
+    [rawVehicles],
+  );
 
   // Compute filter counts
   const filterOptionsWithCounts: FilterOption[] = useMemo(() => {
@@ -301,6 +323,23 @@ export default function SystemVehiclesPage() {
 
     return result;
   }, [vehicles, statusFilter, search]);
+
+  // Error state
+  if (error) {
+    return (
+      <div className="p-6">
+        <Card>
+          <CardContent className="flex items-center gap-3 py-6">
+            <AlertCircle className="h-5 w-5 text-status-error shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-text-primary">Failed to load vehicles</p>
+              <p className="text-xs text-text-tertiary mt-1">{error.message}</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">

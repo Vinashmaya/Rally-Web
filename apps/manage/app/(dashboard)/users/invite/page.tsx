@@ -147,24 +147,38 @@ export default function InviteUserPage() {
 
   const selectedRole = watch('role');
 
-  const onSubmit = async (data: InviteFormValues) => {
-    try {
-      // TODO: Implement Firebase Auth createUser + Firestore write
-      // 1. Call Firebase Admin SDK (via API route) to create user with email
-      // 2. Create DealerUser document in Firestore users/{uid}:
-      //    {
-      //      email: data.email,
-      //      displayName: data.displayName,
-      //      phone: data.phone,
-      //      dealershipId,
-      //      role: data.role as UserRole,
-      //      permissions: DEFAULT_PERMISSIONS[data.role as UserRole],
-      //      createdAt: serverTimestamp(),
-      //    }
-      // 3. Send invitation email with password reset link
+  const activeGroup = useTenantStore((s) => s.activeGroup);
+  const groupId = activeGroup?.id ?? '';
 
-      // Simulate async operation for now
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+  const onSubmit = async (data: InviteFormValues) => {
+    if (!dealershipId || !groupId) {
+      toast({
+        type: 'error',
+        title: 'No store selected',
+        description: 'Select a store before inviting users.',
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/users/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: data.email,
+          displayName: data.displayName,
+          role: data.role,
+          phone: data.phone || undefined,
+          dealershipId,
+          groupId,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error ?? 'Failed to invite user');
+      }
 
       toast({
         type: 'success',

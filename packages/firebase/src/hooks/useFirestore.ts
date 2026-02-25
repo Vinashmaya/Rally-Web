@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import {
   doc,
   collection,
+  collectionGroup,
   onSnapshot,
   query,
 } from 'firebase/firestore';
@@ -181,6 +182,72 @@ export function useCollection<T>(
     return () => unsubscribe();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, constraintsKey]);
+
+  return { data, loading, error };
+}
+
+// ---------------------------------------------------------------------------
+// useCollectionGroup — collection group real-time listener with query support
+// ---------------------------------------------------------------------------
+
+/**
+ * Subscribe to a Firestore collection group in real-time with optional query constraints.
+ * Queries across all collections with the same name, regardless of parent document.
+ * Automatically converts Firestore Timestamps to JS Dates.
+ *
+ * @param collectionName - The collection name to query across all parent documents
+ * @param constraints - Optional array of QueryConstraint (where, orderBy, limit, etc.)
+ * @param constraintKey - Optional stable string key that changes when constraint *values* change.
+ * @returns { data, loading, error }
+ */
+export function useCollectionGroup<T>(
+  collectionName: string,
+  constraints?: QueryConstraint[],
+  constraintKey?: string,
+): UseCollectionReturn<T> {
+  const [data, setData] = useState<T[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  // Use the provided constraintKey if available, otherwise fall back to type-only serialization.
+  const constraintsKey = constraintKey
+    ?? (constraints ? JSON.stringify(constraints.map((c) => c.type)) : 'none');
+
+  useEffect(() => {
+    if (!collectionName) {
+      setData([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    const groupRef = collectionGroup(db, collectionName);
+    const q = constraints && constraints.length > 0
+      ? query(groupRef, ...constraints)
+      : query(groupRef);
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const docs = snapshot.docs.map((docSnap) => {
+          const raw = docSnap.data();
+          const converted = convertTimestamps<T>(raw);
+          return { ...converted, id: docSnap.id } as T;
+        });
+        setData(docs);
+        setLoading(false);
+      },
+      (err) => {
+        setError(err);
+        setLoading(false);
+      },
+    );
+
+    return () => unsubscribe();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collectionName, constraintsKey]);
 
   return { data, loading, error };
 }

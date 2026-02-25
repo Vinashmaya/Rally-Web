@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   User,
@@ -21,9 +21,10 @@ import {
   Badge,
   Skeleton,
   Avatar,
+  useToast,
 } from '@rally/ui';
 import { useAuthStore, useTenantStore } from '@rally/services';
-import { USER_ROLE_DISPLAY, type UserRole } from '@rally/firebase';
+import { USER_ROLE_DISPLAY, updateUserPreferences, type UserRole } from '@rally/firebase';
 
 // ---------------------------------------------------------------------------
 // Detail row component
@@ -117,16 +118,55 @@ function SettingsSkeleton() {
 
 export default function PortalSettingsPage() {
   const router = useRouter();
+  const { toast } = useToast();
   const firebaseUser = useAuthStore((s) => s.firebaseUser);
   const dealerUser = useAuthStore((s) => s.dealerUser);
   const isLoading = useAuthStore((s) => s.isLoading);
   const signOut = useAuthStore((s) => s.signOut);
   const activeStore = useTenantStore((s) => s.activeStore);
 
+  const [isSavingPrefs, setIsSavingPrefs] = useState(false);
+
   const handleSignOut = useCallback(async () => {
     await signOut();
     router.push('/login');
   }, [signOut, router]);
+
+  const handlePreferenceChange = useCallback(
+    async (key: string, value: unknown) => {
+      const uid = firebaseUser?.uid;
+      if (!uid || !dealerUser) return;
+
+      const currentPrefs = dealerUser.preferences ?? {
+        enableHaptics: true,
+        enableSounds: true,
+        showDistanceInMetric: false,
+        autoFollowMode: false,
+        notificationsEnabled: true,
+      };
+
+      const updatedPrefs = { ...currentPrefs, [key]: value };
+
+      setIsSavingPrefs(true);
+      try {
+        await updateUserPreferences(uid, updatedPrefs as Record<string, unknown>);
+        toast({
+          type: 'success',
+          title: 'Preference saved',
+          description: 'Your preference has been updated.',
+        });
+      } catch (err) {
+        toast({
+          type: 'error',
+          title: 'Failed to save preference',
+          description: err instanceof Error ? err.message : 'Something went wrong',
+        });
+      } finally {
+        setIsSavingPrefs(false);
+      }
+    },
+    [firebaseUser?.uid, dealerUser, toast],
+  );
 
   if (isLoading) {
     return (
@@ -144,7 +184,7 @@ export default function PortalSettingsPage() {
   const roleDisplay = USER_ROLE_DISPLAY[role] ?? 'Staff';
   const photoURL = dealerUser?.photoURL ?? firebaseUser?.photoURL ?? undefined;
 
-  // Preferences (readonly display for now)
+  // Preferences
   const preferences = dealerUser?.preferences;
   const defaultMapView = preferences?.defaultMapView ?? 'map';
   const notificationsEnabled = preferences?.notificationsEnabled ?? true;
@@ -201,25 +241,22 @@ export default function PortalSettingsPage() {
               label="Satellite Map View"
               description="Use satellite imagery as the default map view"
               checked={defaultMapView === 'satellite'}
-              onChange={() => {
-                // TODO: Write preference to Firestore
+              onChange={(checked) => {
+                handlePreferenceChange('defaultMapView', checked ? 'satellite' : 'map');
               }}
-              disabled
+              disabled={isSavingPrefs}
             />
             <ToggleRow
               icon={Bell}
               label="Notifications"
               description="Receive push notifications for activity updates"
               checked={notificationsEnabled}
-              onChange={() => {
-                // TODO: Write preference to Firestore
+              onChange={(checked) => {
+                handlePreferenceChange('notificationsEnabled', checked);
               }}
-              disabled
+              disabled={isSavingPrefs}
             />
           </div>
-          <p className="mt-3 text-xs text-[var(--text-tertiary)]">
-            Preference sync will be available in a future update.
-          </p>
         </CardContent>
       </Card>
 

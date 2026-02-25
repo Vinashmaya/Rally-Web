@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo } from 'react';
 import {
   CreditCard,
   Wallet,
@@ -24,21 +24,8 @@ import {
   Skeleton,
 } from '@rally/ui';
 import { useToast } from '@rally/ui';
-
-// ---------------------------------------------------------------------------
-// Mock profile data
-// ---------------------------------------------------------------------------
-
-const MOCK_PROFILE = {
-  name: 'Trey Adcox',
-  role: 'Sales Consultant',
-  dealership: 'Gallatin CDJR',
-  phone: '(615) 555-1234',
-  email: 'trey@gallatincdjr.com',
-  address: '1100 Nashville Pike, Gallatin, TN 37066',
-  sharesThisMonth: 23,
-  lastShared: '2 hours ago',
-} as const;
+import { useAuthStore, useTenantStore } from '@rally/services';
+import { USER_ROLE_DISPLAY, type UserRole } from '@rally/firebase';
 
 // ---------------------------------------------------------------------------
 // QR Code placeholder
@@ -88,7 +75,16 @@ function QRCodePlaceholder() {
 // Business card preview
 // ---------------------------------------------------------------------------
 
-function BusinessCardPreview() {
+interface BusinessCardPreviewProps {
+  name: string;
+  role: string;
+  dealership: string;
+  phone: string;
+  email: string;
+  address: string;
+}
+
+function BusinessCardPreview({ name, role, dealership, phone, email, address }: BusinessCardPreviewProps) {
   return (
     <div className="mx-auto w-full max-w-sm">
       <div className="relative overflow-hidden rounded-[var(--radius-rally-lg)] border-2 border-[var(--rally-gold)]/30 bg-gradient-to-br from-[var(--surface-raised)] to-[var(--surface-overlay)] p-6 shadow-xl">
@@ -113,10 +109,10 @@ function BusinessCardPreview() {
         {/* Name & role */}
         <div className="mb-4">
           <h3 className="text-xl font-bold text-[var(--text-primary)]">
-            {MOCK_PROFILE.name}
+            {name}
           </h3>
-          <p className="text-sm text-[var(--rally-gold)]">{MOCK_PROFILE.role}</p>
-          <p className="text-xs text-[var(--text-secondary)] mt-0.5">{MOCK_PROFILE.dealership}</p>
+          <p className="text-sm text-[var(--rally-gold)]">{role}</p>
+          <p className="text-xs text-[var(--text-secondary)] mt-0.5">{dealership}</p>
         </div>
 
         {/* Divider */}
@@ -124,18 +120,22 @@ function BusinessCardPreview() {
 
         {/* Contact details */}
         <div className="flex flex-col gap-2 mb-4">
-          <div className="flex items-center gap-2">
-            <Phone className="h-3.5 w-3.5 text-[var(--rally-gold)]" />
-            <span className="text-sm text-[var(--text-primary)]">{MOCK_PROFILE.phone}</span>
-          </div>
+          {phone && (
+            <div className="flex items-center gap-2">
+              <Phone className="h-3.5 w-3.5 text-[var(--rally-gold)]" />
+              <span className="text-sm text-[var(--text-primary)]">{phone}</span>
+            </div>
+          )}
           <div className="flex items-center gap-2">
             <Mail className="h-3.5 w-3.5 text-[var(--rally-gold)]" />
-            <span className="text-sm text-[var(--text-primary)]">{MOCK_PROFILE.email}</span>
+            <span className="text-sm text-[var(--text-primary)]">{email}</span>
           </div>
-          <div className="flex items-center gap-2">
-            <MapPin className="h-3.5 w-3.5 text-[var(--rally-gold)]" />
-            <span className="text-xs text-[var(--text-secondary)]">{MOCK_PROFILE.address}</span>
-          </div>
+          {address && (
+            <div className="flex items-center gap-2">
+              <MapPin className="h-3.5 w-3.5 text-[var(--rally-gold)]" />
+              <span className="text-xs text-[var(--text-secondary)]">{address}</span>
+            </div>
+          )}
         </div>
 
         {/* QR code */}
@@ -169,46 +169,107 @@ function CardsSkeleton() {
 
 export default function CardsPage() {
   const { toast } = useToast();
+  const firebaseUser = useAuthStore((s) => s.firebaseUser);
+  const dealerUser = useAuthStore((s) => s.dealerUser);
+  const isLoading = useAuthStore((s) => s.isLoading);
+  const activeStore = useTenantStore((s) => s.activeStore);
 
-  const handleAddToWallet = () => {
-    // TODO: Generate Apple Wallet .pkpass via server route and trigger download
-    // TODO: Pass Type ID: JHBT9M7Z78.pass.com.vyaxis
-    toast({
-      type: 'info',
-      title: 'Apple Wallet integration',
-      description: 'Wallet pass generation coming soon.',
-    });
+  // Derive profile from real auth/tenant data
+  const profile = useMemo(() => {
+    const name = dealerUser?.displayName ?? firebaseUser?.displayName ?? 'User';
+    const role = (dealerUser?.role ?? 'salesperson') as UserRole;
+    const roleDisplay = USER_ROLE_DISPLAY[role] ?? 'Staff';
+    const email = dealerUser?.email ?? firebaseUser?.email ?? '';
+    const phone = dealerUser?.phone ?? '';
+    const dealership = activeStore?.name ?? '';
+    const address = activeStore
+      ? `${activeStore.address}, ${activeStore.city}, ${activeStore.state} ${activeStore.zipCode}`
+      : '';
+    const slug = name.toLowerCase().replace(/\s+/g, '-');
+    const cardUrl = `https://rally.vin/card/${slug}`;
+
+    return { name, roleDisplay, email, phone, dealership, address, cardUrl };
+  }, [dealerUser, firebaseUser, activeStore]);
+
+  const handleAddToWallet = async () => {
+    try {
+      const response = await fetch('/api/wallet/generate-pass', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: profile.name,
+          role: profile.roleDisplay,
+          email: profile.email,
+          phone: profile.phone,
+          dealership: profile.dealership,
+        }),
+      });
+
+      if (!response.ok) {
+        toast({
+          type: 'info',
+          title: 'Apple Wallet',
+          description: 'Wallet pass generation coming soon.',
+        });
+        return;
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${profile.name.replace(/\s+/g, '_')}_rally.pkpass`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast({ type: 'success', title: 'Pass downloaded', description: 'Open the file to add to Apple Wallet.' });
+    } catch {
+      toast({ type: 'info', title: 'Apple Wallet', description: 'Wallet pass generation coming soon.' });
+    }
   };
 
-  const handleShareNFC = () => {
-    // TODO: Use Web NFC API to write vCard URL to NFC tag
-    toast({
-      type: 'info',
-      title: 'NFC sharing',
-      description: 'NFC business card sharing coming soon.',
-    });
+  const handleShareNFC = async () => {
+    if (!('NDEFReader' in window)) {
+      toast({ type: 'info', title: 'NFC not supported', description: 'Web NFC requires Chrome on Android.' });
+      return;
+    }
+
+    try {
+      const NDEFReaderCtor = (window as Record<string, unknown>)['NDEFReader'] as new () => { write: (opts: Record<string, unknown>) => Promise<void> };
+      const writer = new NDEFReaderCtor();
+      await writer.write({
+        records: [
+          { recordType: 'url', data: profile.cardUrl },
+          { recordType: 'text', data: `${profile.name} - ${profile.dealership}` },
+        ],
+      });
+      toast({ type: 'success', title: 'NFC written', description: 'Business card written to NFC tag.' });
+    } catch {
+      toast({ type: 'error', title: 'NFC failed', description: 'Could not write to NFC tag.' });
+    }
   };
 
   const handleCopyLink = () => {
-    // TODO: Copy the real card URL to clipboard
-    const mockUrl = `https://rally.vin/card/${MOCK_PROFILE.name.toLowerCase().replace(/\s+/g, '-')}`;
-    navigator.clipboard.writeText(mockUrl).then(
+    navigator.clipboard.writeText(profile.cardUrl).then(
       () => {
-        toast({
-          type: 'success',
-          title: 'Link copied',
-          description: mockUrl,
-        });
+        toast({ type: 'success', title: 'Link copied', description: profile.cardUrl });
       },
       () => {
-        toast({
-          type: 'error',
-          title: 'Failed to copy',
-          description: 'Could not access clipboard.',
-        });
+        toast({ type: 'error', title: 'Failed to copy', description: 'Could not access clipboard.' });
       }
     );
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col gap-6">
+        <h1 className="text-2xl font-bold text-[var(--text-primary)]">My Business Card</h1>
+        <CardsSkeleton />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -217,8 +278,15 @@ export default function CardsPage() {
         <h1 className="text-2xl font-bold text-[var(--text-primary)]">My Business Card</h1>
       </div>
 
-      {/* Card preview */}
-      <BusinessCardPreview />
+      {/* Card preview — real data from auth + tenant stores */}
+      <BusinessCardPreview
+        name={profile.name}
+        role={profile.roleDisplay}
+        dealership={profile.dealership}
+        phone={profile.phone}
+        email={profile.email}
+        address={profile.address}
+      />
 
       {/* Action buttons */}
       <div className="flex flex-col gap-3 mx-auto w-full max-w-sm">
@@ -250,40 +318,6 @@ export default function CardsPage() {
           Copy Link
         </Button>
       </div>
-
-      {/* Stats */}
-      <Card className="mx-auto w-full max-w-sm">
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Share2 className="h-4 w-4 text-[var(--rally-gold)]" />
-            <h2 className="text-sm font-semibold text-[var(--text-primary)]">
-              Sharing Stats
-            </h2>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="flex justify-between">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-[var(--status-success)]" />
-              <div>
-                <p className="text-lg font-bold text-[var(--text-primary)] tabular-nums">
-                  {MOCK_PROFILE.sharesThisMonth}
-                </p>
-                <p className="text-xs text-[var(--text-secondary)]">Shared this month</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4 text-[var(--text-tertiary)]" />
-              <div>
-                <p className="text-sm font-medium text-[var(--text-primary)]">
-                  {MOCK_PROFILE.lastShared}
-                </p>
-                <p className="text-xs text-[var(--text-secondary)]">Last shared</p>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Info note */}
       <p className="text-xs text-[var(--text-tertiary)] text-center max-w-sm mx-auto">

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Card,
@@ -29,94 +29,39 @@ import {
   AlertTriangle,
   ArrowRight,
 } from 'lucide-react';
-
-// ---------------------------------------------------------------------------
-// Mock Data — TODO: Replace with real Firestore admin queries via API routes
-// ---------------------------------------------------------------------------
-
-const MOCK_KPI = [
-  {
-    label: 'Total Tenants',
-    value: '12',
-    change: '+2',
-    changeLabel: 'this month',
-    icon: Building2,
-    sparkline: [
-      { value: 4 }, { value: 5 }, { value: 6 }, { value: 6 },
-      { value: 7 }, { value: 8 }, { value: 9 }, { value: 10 },
-      { value: 10 }, { value: 11 }, { value: 11 }, { value: 12 },
-    ] satisfies StatChartDataPoint[],
-  },
-  {
-    label: 'Total Users',
-    value: '342',
-    change: '+28',
-    changeLabel: 'this month',
-    icon: Users,
-    sparkline: [
-      { value: 210 }, { value: 228 }, { value: 245 }, { value: 261 },
-      { value: 278 }, { value: 290 }, { value: 302 }, { value: 310 },
-      { value: 318 }, { value: 325 }, { value: 334 }, { value: 342 },
-    ] satisfies StatChartDataPoint[],
-  },
-  {
-    label: 'Active Vehicles',
-    value: '4,891',
-    change: '+156',
-    changeLabel: 'this week',
-    icon: Car,
-    sparkline: [
-      { value: 4200 }, { value: 4310 }, { value: 4380 }, { value: 4420 },
-      { value: 4490 }, { value: 4550 }, { value: 4610 }, { value: 4680 },
-      { value: 4720 }, { value: 4790 }, { value: 4840 }, { value: 4891 },
-    ] satisfies StatChartDataPoint[],
-  },
-  {
-    label: 'System Uptime',
-    value: '99.97%',
-    change: '47d',
-    changeLabel: 'since last restart',
-    icon: Clock,
-    sparkline: [
-      { value: 99.9 }, { value: 100 }, { value: 100 }, { value: 99.8 },
-      { value: 100 }, { value: 100 }, { value: 100 }, { value: 99.95 },
-      { value: 100 }, { value: 100 }, { value: 99.99 }, { value: 99.97 },
-    ] satisfies StatChartDataPoint[],
-  },
-] as const;
-
-// TODO: Replace with real audit log query via API route (GET /api/admin/audit-log?limit=10)
-const MOCK_ACTIVITY = [
-  { id: '1', action: 'tenant.provisioned', actor: 'System', target: 'gallatin-cdjr', time: '2 min ago', type: 'success' as const },
-  { id: '2', action: 'user.created', actor: 'trey@rally.vin', target: 'john.doe@gallatin.com', time: '15 min ago', type: 'info' as const },
-  { id: '3', action: 'user.role_changed', actor: 'admin@rally.vin', target: 'jane.smith@dealer.com', time: '1 hr ago', type: 'warning' as const },
-  { id: '4', action: 'tenant.suspended', actor: 'admin@rally.vin', target: 'test-dealer-old', time: '3 hr ago', type: 'error' as const },
-  { id: '5', action: 'vehicle.bulk_import', actor: 'sync-service', target: 'nashville-motors', time: '4 hr ago', type: 'info' as const },
-  { id: '6', action: 'dns.record_created', actor: 'System', target: 'springfield-auto.rally.vin', time: '6 hr ago', type: 'success' as const },
-  { id: '7', action: 'user.login', actor: 'trey@rally.vin', target: 'admin.rally.vin', time: '8 hr ago', type: 'info' as const },
-  { id: '8', action: 'ssl.cert_renewed', actor: 'System', target: 'liberty-ford.rally.vin', time: '12 hr ago', type: 'success' as const },
-  { id: '9', action: 'feature_flag.toggled', actor: 'admin@rally.vin', target: 'nfc_enabled', time: '1 day ago', type: 'warning' as const },
-  { id: '10', action: 'tenant.provisioned', actor: 'System', target: 'cookeville-chevy', time: '2 days ago', type: 'success' as const },
-] as const;
-
-// TODO: Replace with real server health API (GET /api/admin/system/health)
-const MOCK_SERVER_HEALTH = [
-  { label: 'CPU', value: '23%', icon: Cpu, status: 'healthy' as const },
-  { label: 'RAM', value: '14.2 / 24 GB', icon: MemoryStick, status: 'healthy' as const },
-  { label: 'Disk', value: '186 / 720 GB', icon: HardDrive, status: 'healthy' as const },
-  { label: 'PM2 Processes', value: '9 / 9 online', icon: Server, status: 'healthy' as const },
-] as const;
+import {
+  useTenants,
+  useAllUsers,
+  useAllVehicles,
+  useAuditLog,
+} from '@rally/firebase';
 
 // ---------------------------------------------------------------------------
 // Activity type → badge variant mapping
 // ---------------------------------------------------------------------------
 
-const ACTIVITY_BADGE_MAP = {
-  success: 'success',
-  error: 'error',
-  warning: 'warning',
-  info: 'info',
-} as const;
+function getActivityType(action: string): 'success' | 'error' | 'warning' | 'info' {
+  if (action.includes('provisioned') || action.includes('created') || action.includes('renewed')) return 'success';
+  if (action.includes('suspended') || action.includes('deprovision') || action.includes('error')) return 'error';
+  if (action.includes('changed') || action.includes('toggled') || action.includes('disabled')) return 'warning';
+  return 'info';
+}
+
+// ---------------------------------------------------------------------------
+// Relative time helper
+// ---------------------------------------------------------------------------
+
+function timeAgo(date: Date | undefined): string {
+  if (!date) return '--';
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hr ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days > 1 ? 's' : ''} ago`;
+}
 
 // ---------------------------------------------------------------------------
 // Server health status → color mapping
@@ -145,13 +90,124 @@ function getHealthDotColor(status: 'healthy' | 'warning' | 'critical'): string {
 }
 
 // ---------------------------------------------------------------------------
+// Server health type
+// ---------------------------------------------------------------------------
+
+interface ServerHealthItem {
+  label: string;
+  value: string;
+  icon: typeof Cpu;
+  status: 'healthy' | 'warning' | 'critical';
+}
+
+// ---------------------------------------------------------------------------
 // Page Component
 // ---------------------------------------------------------------------------
 
 export default function AdminDashboardPage() {
   const router = useRouter();
-  // TODO: Replace with real loading state from API queries
-  const [loading] = useState(false);
+
+  // Real Firestore data via hooks
+  const { tenants, loading: tenantsLoading } = useTenants({});
+  const { allUsers, loading: usersLoading } = useAllUsers({});
+  const { allVehicles, loading: vehiclesLoading } = useAllVehicles({});
+  const { auditLogs, loading: activityLoading } = useAuditLog({ limitCount: 10 });
+
+  // Server health — fetched from API route
+  const [serverHealth, setServerHealth] = useState<ServerHealthItem[]>([]);
+  const [healthLoading, setHealthLoading] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/admin/system/health')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.health) {
+          setServerHealth(data.health);
+        } else {
+          // Fallback: build health items from raw data
+          const h: ServerHealthItem[] = [];
+          if (data.cpu !== undefined) {
+            const cpuPercent = Math.round(data.cpu);
+            h.push({
+              label: 'CPU',
+              value: `${cpuPercent}%`,
+              icon: Cpu,
+              status: cpuPercent > 80 ? 'critical' : cpuPercent > 60 ? 'warning' : 'healthy',
+            });
+          }
+          if (data.memUsed !== undefined && data.memTotal !== undefined) {
+            const memGB = (data.memUsed / 1024 / 1024 / 1024).toFixed(1);
+            const totalGB = (data.memTotal / 1024 / 1024 / 1024).toFixed(0);
+            const pct = data.memUsed / data.memTotal;
+            h.push({
+              label: 'RAM',
+              value: `${memGB} / ${totalGB} GB`,
+              icon: MemoryStick,
+              status: pct > 0.9 ? 'critical' : pct > 0.7 ? 'warning' : 'healthy',
+            });
+          }
+          if (data.uptime !== undefined) {
+            const days = Math.floor(data.uptime / 86400);
+            h.push({
+              label: 'Uptime',
+              value: `${days}d`,
+              icon: Clock,
+              status: 'healthy',
+            });
+          }
+          if (data.pm2 !== undefined) {
+            const online = data.pm2.filter((p: { status: string }) => p.status === 'online').length;
+            const total = data.pm2.length;
+            h.push({
+              label: 'PM2 Processes',
+              value: `${online} / ${total} online`,
+              icon: Server,
+              status: online < total ? 'warning' : 'healthy',
+            });
+          }
+          if (h.length === 0) {
+            // Default fallback
+            h.push(
+              { label: 'CPU', value: '--', icon: Cpu, status: 'healthy' },
+              { label: 'RAM', value: '--', icon: MemoryStick, status: 'healthy' },
+              { label: 'Disk', value: '--', icon: HardDrive, status: 'healthy' },
+              { label: 'PM2', value: '--', icon: Server, status: 'healthy' },
+            );
+          }
+          setServerHealth(h);
+        }
+      })
+      .catch(() => {
+        setServerHealth([
+          { label: 'CPU', value: '--', icon: Cpu, status: 'healthy' },
+          { label: 'RAM', value: '--', icon: MemoryStick, status: 'healthy' },
+          { label: 'Disk', value: '--', icon: HardDrive, status: 'healthy' },
+          { label: 'PM2', value: '--', icon: Server, status: 'healthy' },
+        ]);
+      })
+      .finally(() => setHealthLoading(false));
+  }, []);
+
+  // Compute KPIs from real data
+  const kpiLoading = tenantsLoading || usersLoading || vehiclesLoading;
+
+  const kpiStats = [
+    {
+      label: 'Total Tenants',
+      value: tenants.length.toLocaleString(),
+      icon: Building2,
+    },
+    {
+      label: 'Total Users',
+      value: allUsers.length.toLocaleString(),
+      icon: Users,
+    },
+    {
+      label: 'Active Vehicles',
+      value: allVehicles.length.toLocaleString(),
+      icon: Car,
+    },
+  ];
 
   return (
     <div className="p-6 space-y-8">
@@ -185,9 +241,9 @@ export default function AdminDashboardPage() {
       </div>
 
       {/* ── KPI Stat Cards ────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {loading
-          ? Array.from({ length: 4 }).map((_, i) => (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {kpiLoading
+          ? Array.from({ length: 3 }).map((_, i) => (
               <Card key={i}>
                 <CardHeader>
                   <Skeleton variant="text" className="h-3 w-24" />
@@ -198,7 +254,7 @@ export default function AdminDashboardPage() {
                 </CardContent>
               </Card>
             ))
-          : MOCK_KPI.map((stat) => {
+          : kpiStats.map((stat) => {
               const Icon = stat.icon;
               return (
                 <Card key={stat.label}>
@@ -214,19 +270,6 @@ export default function AdminDashboardPage() {
                     <p className="text-3xl font-bold text-text-primary font-[family-name:var(--font-geist-mono)]">
                       {stat.value}
                     </p>
-                    <div className="flex items-center gap-2 mt-2">
-                      <Badge variant="success" size="sm">
-                        {stat.change}
-                      </Badge>
-                      <span className="text-xs text-text-tertiary">
-                        {stat.changeLabel}
-                      </span>
-                    </div>
-                    <StatChart
-                      data={[...stat.sparkline]}
-                      height={40}
-                      className="mt-3"
-                    />
                   </CardContent>
                 </Card>
               );
@@ -256,7 +299,7 @@ export default function AdminDashboardPage() {
             </div>
           </CardHeader>
           <CardContent className="p-0">
-            {loading ? (
+            {activityLoading ? (
               <div className="p-4 space-y-3">
                 {Array.from({ length: 5 }).map((_, i) => (
                   <div key={i} className="flex items-center gap-3">
@@ -268,54 +311,65 @@ export default function AdminDashboardPage() {
                   </div>
                 ))}
               </div>
+            ) : auditLogs.length === 0 ? (
+              <div className="p-8 text-center">
+                <p className="text-sm text-text-tertiary">No recent activity</p>
+              </div>
             ) : (
               <div className="divide-y divide-surface-border">
-                {MOCK_ACTIVITY.map((entry) => (
-                  <div
-                    key={entry.id}
-                    className="flex items-center gap-3 px-4 py-3 hover:bg-surface-overlay transition-colors"
-                  >
-                    {/* Status icon */}
-                    <div className="shrink-0">
-                      {entry.type === 'success' && (
-                        <ShieldCheck className="h-4 w-4 text-status-success" />
-                      )}
-                      {entry.type === 'info' && (
-                        <UserPlus className="h-4 w-4 text-status-info" />
-                      )}
-                      {entry.type === 'warning' && (
-                        <AlertTriangle className="h-4 w-4 text-status-warning" />
-                      )}
-                      {entry.type === 'error' && (
-                        <AlertTriangle className="h-4 w-4 text-status-error" />
-                      )}
-                    </div>
-
-                    {/* Action details */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <Badge
-                          variant={ACTIVITY_BADGE_MAP[entry.type]}
-                          size="sm"
-                        >
-                          {entry.action}
-                        </Badge>
+                {auditLogs.map((entry) => {
+                  const actType = getActivityType(entry.action ?? '');
+                  return (
+                    <div
+                      key={entry.id ?? entry.action}
+                      className="flex items-center gap-3 px-4 py-3 hover:bg-surface-overlay transition-colors"
+                    >
+                      {/* Status icon */}
+                      <div className="shrink-0">
+                        {actType === 'success' && (
+                          <ShieldCheck className="h-4 w-4 text-status-success" />
+                        )}
+                        {actType === 'info' && (
+                          <UserPlus className="h-4 w-4 text-status-info" />
+                        )}
+                        {actType === 'warning' && (
+                          <AlertTriangle className="h-4 w-4 text-status-warning" />
+                        )}
+                        {actType === 'error' && (
+                          <AlertTriangle className="h-4 w-4 text-status-error" />
+                        )}
                       </div>
-                      <p className="text-xs text-text-tertiary mt-0.5 truncate">
-                        <span className="text-text-secondary">{entry.actor}</span>
-                        {' \u2192 '}
-                        <span className="font-[family-name:var(--font-geist-mono)] text-text-secondary">
-                          {entry.target}
-                        </span>
-                      </p>
-                    </div>
 
-                    {/* Time */}
-                    <span className="text-xs text-text-tertiary shrink-0">
-                      {entry.time}
-                    </span>
-                  </div>
-                ))}
+                      {/* Action details */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <Badge
+                            variant={actType === 'error' ? 'error' : actType === 'warning' ? 'warning' : actType === 'success' ? 'success' : 'info'}
+                            size="sm"
+                          >
+                            {entry.action}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-text-tertiary mt-0.5 truncate">
+                          <span className="text-text-secondary">{entry.actorId ?? 'System'}</span>
+                          {entry.targetId ? (
+                            <>
+                              {' \u2192 '}
+                              <span className="font-[family-name:var(--font-geist-mono)] text-text-secondary">
+                                {entry.targetId}
+                              </span>
+                            </>
+                          ) : null}
+                        </p>
+                      </div>
+
+                      {/* Time */}
+                      <span className="text-xs text-text-tertiary shrink-0">
+                        {timeAgo(entry.timestamp)}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </CardContent>
@@ -331,11 +385,11 @@ export default function AdminDashboardPage() {
               </h2>
             </div>
             <p className="text-xs text-text-tertiary">
-              VPS 74.208.123.209
+              VPS {process.env.NEXT_PUBLIC_VPS_IP ?? '66.179.189.87'}
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
-            {loading
+            {healthLoading
               ? Array.from({ length: 4 }).map((_, i) => (
                   <div key={i} className="flex items-center gap-3">
                     <Skeleton variant="circle" className="h-8 w-8" />
@@ -345,7 +399,7 @@ export default function AdminDashboardPage() {
                     </div>
                   </div>
                 ))
-              : MOCK_SERVER_HEALTH.map((item) => {
+              : serverHealth.map((item) => {
                   const Icon = item.icon;
                   return (
                     <div

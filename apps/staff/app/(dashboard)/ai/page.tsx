@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Sparkles,
   Send,
@@ -18,6 +18,7 @@ import {
   Skeleton,
 } from '@rally/ui';
 import { useToast } from '@rally/ui';
+import { useTenantStore } from '@rally/services';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -33,7 +34,7 @@ interface ChatMessage {
 }
 
 // ---------------------------------------------------------------------------
-// Mock conversation
+// Initial conversation
 // ---------------------------------------------------------------------------
 
 const INITIAL_MESSAGES: ChatMessage[] = [
@@ -176,6 +177,7 @@ function AISkeleton() {
 
 export default function AIPage() {
   const { toast } = useToast();
+  const dealershipId = useTenantStore((s) => s.activeStore?.id ?? '');
   const [messages, setMessages] = useState<ChatMessage[]>([...INITIAL_MESSAGES]);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -186,8 +188,8 @@ export default function AIPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping]);
 
-  const handleSend = () => {
-    const trimmed = inputValue.trim();
+  const sendMessage = useCallback(async (text: string) => {
+    const trimmed = text.trim();
     if (!trimmed) return;
 
     // Add user message
@@ -201,29 +203,65 @@ export default function AIPage() {
     setInputValue('');
     setIsTyping(true);
 
-    // TODO: Send message to AI backend (OpenAI/Anthropic API via server route)
-    // Simulate AI response
-    setTimeout(() => {
+    try {
+      const res = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: trimmed }],
+          dealershipId,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Server error: ${res.status}`);
+      }
+
+      const json = await res.json() as {
+        success: boolean;
+        data: { message: { role: string; content: string } };
+        error?: string;
+      };
+
+      if (!json.success || !json.data?.message?.content) {
+        throw new Error(json.error ?? 'Invalid response from AI backend');
+      }
+
       const aiMessage: ChatMessage = {
         id: `msg-ai-${Date.now()}`,
         role: 'ai',
-        content:
-          "That's a great question! I'm currently running with mock responses. When connected to the Rally AI backend, I'll be able to pull real inventory data, market comparisons, and financing calculations to help you close more deals.",
+        content: json.data.message.content,
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, aiMessage]);
+    } catch (err) {
+      toast({
+        type: 'error',
+        title: 'AI response failed',
+        description: err instanceof Error ? err.message : 'An unexpected error occurred.',
+      });
+
+      // Add fallback message so the conversation doesn't look broken
+      const fallbackMessage: ChatMessage = {
+        id: `msg-ai-fallback-${Date.now()}`,
+        role: 'ai',
+        content:
+          "I wasn't able to process that request. Please try again, or contact support if the issue persists.",
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, fallbackMessage]);
+    } finally {
       setIsTyping(false);
-    }, 2000);
+    }
+  }, [dealershipId, toast]);
+
+  const handleSend = () => {
+    sendMessage(inputValue);
   };
 
   const handleSuggestedPrompt = (prompt: string) => {
-    setInputValue(prompt);
-    // TODO: Auto-send suggested prompts
-    toast({
-      type: 'info',
-      title: 'Suggested prompt selected',
-      description: 'Press send or customize the prompt before sending.',
-    });
+    // Auto-send the suggested prompt immediately
+    sendMessage(prompt);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -278,7 +316,8 @@ export default function AIPage() {
                 key={prompt}
                 type="button"
                 onClick={() => handleSuggestedPrompt(prompt)}
-                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--surface-border)] bg-[var(--surface-overlay)] px-3 py-1.5 text-xs text-[var(--text-secondary)] transition-colors hover:border-[var(--rally-gold)]/30 hover:text-[var(--rally-gold)] cursor-pointer"
+                disabled={isTyping}
+                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--surface-border)] bg-[var(--surface-overlay)] px-3 py-1.5 text-xs text-[var(--text-secondary)] transition-colors hover:border-[var(--rally-gold)]/30 hover:text-[var(--rally-gold)] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <ArrowRight className="h-3 w-3" />
                 {prompt}

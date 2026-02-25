@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   Card,
@@ -9,10 +10,12 @@ import {
   Badge,
   Avatar,
   Skeleton,
+  useToast,
 } from '@rally/ui';
 import {
   useDocument,
   USER_ROLE_DISPLAY,
+  USER_ROLE_VALUES,
   isManagerRole,
   isSalesRole,
   isServiceRole,
@@ -28,6 +31,7 @@ import {
   Phone,
   UserCog,
   Calendar,
+  ChevronDown,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -133,9 +137,87 @@ function InfoRow({ icon, label, value }: InfoRowProps) {
 export default function UserDetailPage() {
   const params = useParams<{ uid: string }>();
   const router = useRouter();
+  const { toast } = useToast();
   const uid = params.uid;
 
   const { data: user, loading, error } = useDocument<DealerUser>(`users/${uid}`);
+
+  // Role editing state
+  const [isEditingRole, setIsEditingRole] = useState(false);
+  const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
+  const [isRoleSaving, setIsRoleSaving] = useState(false);
+  const [isDeactivating, setIsDeactivating] = useState(false);
+  const [showDeactivateConfirm, setShowDeactivateConfirm] = useState(false);
+
+  const handleRoleChange = useCallback(async () => {
+    if (!selectedRole || !uid) return;
+
+    setIsRoleSaving(true);
+    try {
+      const response = await fetch(`/api/users/${uid}/role`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: selectedRole }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error ?? 'Failed to update role');
+      }
+
+      toast({
+        type: 'success',
+        title: 'Role updated',
+        description: `Role changed to ${USER_ROLE_DISPLAY[selectedRole]}.`,
+      });
+
+      setIsEditingRole(false);
+      setSelectedRole(null);
+    } catch (err) {
+      toast({
+        type: 'error',
+        title: 'Failed to update role',
+        description: err instanceof Error ? err.message : 'Something went wrong',
+      });
+    } finally {
+      setIsRoleSaving(false);
+    }
+  }, [selectedRole, uid, toast]);
+
+  const handleDeactivate = useCallback(async () => {
+    if (!uid) return;
+
+    setIsDeactivating(true);
+    try {
+      const response = await fetch(`/api/users/${uid}/deactivate`, {
+        method: 'POST',
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error ?? 'Failed to deactivate user');
+      }
+
+      toast({
+        type: 'success',
+        title: 'User deactivated',
+        description: 'The user account has been disabled.',
+      });
+
+      router.push('/users');
+    } catch (err) {
+      toast({
+        type: 'error',
+        title: 'Failed to deactivate user',
+        description: err instanceof Error ? err.message : 'Something went wrong',
+      });
+    } finally {
+      setIsDeactivating(false);
+      setShowDeactivateConfirm(false);
+    }
+  }, [uid, toast, router]);
 
   if (loading) {
     return <UserDetailSkeleton />;
@@ -307,23 +389,106 @@ export default function UserDetailPage() {
         </CardContent>
       </Card>
 
+      {/* Role Editing Panel */}
+      {isEditingRole && (
+        <Card>
+          <CardHeader>
+            <h2 className="text-lg font-semibold text-text-primary">Change Role</h2>
+            <p className="text-xs text-text-secondary">
+              Select a new role for {user.displayName}
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col gap-3">
+              <div className="relative">
+                <select
+                  value={selectedRole ?? user.role}
+                  onChange={(e) => setSelectedRole(e.target.value as UserRole)}
+                  className="flex h-10 w-full items-center rounded-rally bg-surface-overlay border border-surface-border px-3 py-2 text-sm text-text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rally-gold focus-visible:ring-offset-2 focus-visible:ring-offset-surface-base appearance-none cursor-pointer"
+                >
+                  {USER_ROLE_VALUES.map((role) => (
+                    <option key={role} value={role}>
+                      {USER_ROLE_DISPLAY[role]}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-tertiary pointer-events-none" />
+              </div>
+              <div className="flex items-center gap-3 justify-end">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setIsEditingRole(false);
+                    setSelectedRole(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  loading={isRoleSaving}
+                  disabled={!selectedRole || selectedRole === user.role}
+                  onClick={handleRoleChange}
+                >
+                  Save Role
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Deactivate Confirmation */}
+      {showDeactivateConfirm && (
+        <Card className="border-status-error/30">
+          <CardContent>
+            <div className="flex flex-col gap-3">
+              <p className="text-sm text-text-primary">
+                Are you sure you want to deactivate <strong>{user.displayName}</strong>?
+                This will disable their account and prevent them from signing in.
+              </p>
+              <div className="flex items-center gap-3 justify-end">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowDeactivateConfirm(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  loading={isDeactivating}
+                  onClick={handleDeactivate}
+                >
+                  Confirm Deactivate
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Action Buttons */}
       <div className="flex items-center gap-3 justify-end pb-8">
         <Button
           variant="secondary"
-          disabled
-          title="TODO: Implement role editing"
+          onClick={() => {
+            setIsEditingRole(true);
+            setSelectedRole(user.role);
+          }}
+          disabled={isEditingRole}
         >
-          {/* TODO: Implement Edit Role modal with role picker and Firestore update */}
           <UserCog className="h-4 w-4" />
           Edit Role
         </Button>
         <Button
           variant="danger"
-          disabled
-          title="TODO: Implement user deactivation"
+          onClick={() => setShowDeactivateConfirm(true)}
+          disabled={showDeactivateConfirm}
         >
-          {/* TODO: Implement deactivation confirmation dialog + Firestore update */}
           Deactivate User
         </Button>
       </div>

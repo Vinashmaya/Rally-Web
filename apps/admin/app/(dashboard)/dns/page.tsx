@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Card,
   CardHeader,
@@ -9,6 +9,7 @@ import {
   Badge,
   Input,
   DataTable,
+  Skeleton,
   useToast,
 } from '@rally/ui';
 import type { ColumnDef } from '@rally/ui';
@@ -37,23 +38,6 @@ interface DnsRecord {
 }
 
 type DnsFilter = 'all' | 'a' | 'cname' | 'other';
-
-// ── Mock Data ──────────────────────────────────────────────────────
-
-const MOCK_DNS_RECORDS: DnsRecord[] = [
-  { id: '1', type: 'A', name: 'app.rally.vin', content: '74.208.123.209', proxied: true, ttl: 1 },
-  { id: '2', type: 'A', name: 'manage.rally.vin', content: '74.208.123.209', proxied: true, ttl: 1 },
-  { id: '3', type: 'A', name: 'admin.rally.vin', content: '74.208.123.209', proxied: true, ttl: 1 },
-  { id: '4', type: 'A', name: 'api.rally.vin', content: '74.208.123.209', proxied: true, ttl: 1 },
-  { id: '5', type: 'A', name: 'acme-motors.rally.vin', content: '74.208.123.209', proxied: true, ttl: 1 },
-  { id: '6', type: 'A', name: 'gallatin-cdjr.rally.vin', content: '74.208.123.209', proxied: true, ttl: 1 },
-  { id: '7', type: 'A', name: 'prestige-auto.rally.vin', content: '74.208.123.209', proxied: true, ttl: 1 },
-  { id: '8', type: 'CNAME', name: 'www.rally.vin', content: 'rally.vin', proxied: true, ttl: 1 },
-  { id: '9', type: 'MX', name: 'rally.vin', content: 'mx1.emailsrvr.com', proxied: false, ttl: 3600 },
-  { id: '10', type: 'TXT', name: 'rally.vin', content: 'v=spf1 include:emailsrvr.com ~all', proxied: false, ttl: 3600 },
-  { id: '11', type: 'A', name: 'rally.vin', content: '74.208.123.209', proxied: true, ttl: 1 },
-  { id: '12', type: 'CNAME', name: 'mail.rally.vin', content: 'emailsrvr.com', proxied: false, ttl: 3600 },
-] as const;
 
 const FILTER_OPTIONS: { label: string; value: DnsFilter }[] = [
   { label: 'All', value: 'all' },
@@ -88,10 +72,30 @@ function getTypeBadgeVariant(type: string): 'gold' | 'info' | 'warning' | 'defau
 
 export default function DnsPage() {
   const { toast } = useToast();
-  const [records, setRecords] = useState<DnsRecord[]>([...MOCK_DNS_RECORDS]);
+  const [records, setRecords] = useState<DnsRecord[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState<DnsFilter>('all');
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // ── Fetch DNS records from API ──────────────────────────────────
+
+  const fetchRecords = useCallback(() => {
+    setLoading(true);
+    fetch('/api/admin/dns')
+      .then((res) => res.json())
+      .then((data: { success?: boolean; data?: DnsRecord[] }) => {
+        if (data.data) setRecords(data.data);
+      })
+      .catch(() => {
+        toast({ type: 'error', title: 'Failed to load DNS records', description: 'Could not reach the Cloudflare API.' });
+      })
+      .finally(() => setLoading(false));
+  }, [toast]);
+
+  useEffect(() => {
+    fetchRecords();
+  }, [fetchRecords]);
 
   // ── Filtered data ────────────────────────────────────────────────
 
@@ -119,14 +123,33 @@ export default function DnsPage() {
 
   function handleDelete(record: DnsRecord) {
     if (deletingId === record.id) {
-      // Confirmed — remove record
-      setRecords((prev) => prev.filter((r) => r.id !== record.id));
+      // Confirmed — call API to delete
       setDeletingId(null);
-      toast({
-        type: 'success',
-        title: 'DNS record deleted',
-        description: `${record.type} record for ${record.name} has been removed.`,
-      });
+      fetch(`/api/admin/dns/${record.id}`, { method: 'DELETE' })
+        .then((res) => res.json())
+        .then((data: { success?: boolean; error?: string }) => {
+          if (data.success) {
+            setRecords((prev) => prev.filter((r) => r.id !== record.id));
+            toast({
+              type: 'success',
+              title: 'DNS record deleted',
+              description: `${record.type} record for ${record.name} has been removed.`,
+            });
+          } else {
+            toast({
+              type: 'error',
+              title: 'Delete failed',
+              description: data.error ?? 'Could not delete the DNS record.',
+            });
+          }
+        })
+        .catch(() => {
+          toast({
+            type: 'error',
+            title: 'Delete failed',
+            description: 'Network error while deleting DNS record.',
+          });
+        });
     } else {
       // First click — confirm
       setDeletingId(record.id);
@@ -141,6 +164,45 @@ export default function DnsPage() {
         setDeletingId((current) => (current === record.id ? null : current));
       }, 4000);
     }
+  }
+
+  // ── Add Record handler ──────────────────────────────────────────
+
+  function handleAddRecord() {
+    const name = window.prompt('Subdomain name (e.g. new-dealer.rally.vin):');
+    if (!name) return;
+    const content = window.prompt('IP address (e.g. 74.208.123.209):', '74.208.123.209');
+    if (!content) return;
+
+    fetch('/api/admin/dns', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, content }),
+    })
+      .then((res) => res.json())
+      .then((data: { success?: boolean; data?: DnsRecord; error?: string }) => {
+        if (data.success && data.data) {
+          setRecords((prev) => [...prev, data.data as DnsRecord]);
+          toast({
+            type: 'success',
+            title: 'DNS record created',
+            description: `A record for ${name} has been created.`,
+          });
+        } else {
+          toast({
+            type: 'error',
+            title: 'Create failed',
+            description: data.error ?? 'Could not create the DNS record.',
+          });
+        }
+      })
+      .catch(() => {
+        toast({
+          type: 'error',
+          title: 'Create failed',
+          description: 'Network error while creating DNS record.',
+        });
+      });
   }
 
   // ── Columns ──────────────────────────────────────────────────────
@@ -263,13 +325,7 @@ export default function DnsPage() {
         <Button
           variant="primary"
           size="md"
-          onClick={() =>
-            toast({
-              type: 'info',
-              title: 'Add Record coming soon',
-              description: 'DNS record creation will be available when the Cloudflare API route is connected.',
-            })
-          }
+          onClick={handleAddRecord}
         >
           <Plus className="h-4 w-4" />
           Add Record
@@ -325,7 +381,13 @@ export default function DnsPage() {
       </div>
 
       {/* Table */}
-      {/* TODO: Replace mock data with real API route calling listDnsRecords() from @rally/infra */}
+      {loading ? (
+        <div className="space-y-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} variant="card" className="h-12" />
+          ))}
+        </div>
+      ) : (
       <DataTable<DnsRecord>
         columns={columns}
         data={filteredRecords}
@@ -335,6 +397,7 @@ export default function DnsPage() {
         emptyDescription="No records match the current search and filter criteria."
         defaultPageSize={25}
       />
+      )}
     </div>
   );
 }

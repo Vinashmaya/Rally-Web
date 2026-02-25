@@ -9,6 +9,7 @@ import {
   Zap,
   Clock,
   AlertTriangle,
+  AlertCircle,
   CheckCircle2,
 } from 'lucide-react';
 import {
@@ -20,6 +21,9 @@ import {
   Skeleton,
 } from '@rally/ui';
 import { useToast } from '@rally/ui';
+import { useBatteryReports, createInteraction } from '@rally/firebase';
+import { useAuthStore, useTenantStore } from '@rally/services';
+import type { BatteryReport, BatteryStatus } from '@rally/firebase';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -27,41 +31,31 @@ import { useToast } from '@rally/ui';
 
 type BatteryFilter = 'all' | 'critical' | 'warning' | 'healthy';
 
-interface BatteryVehicle {
-  stockNumber: string;
-  year: number;
-  make: string;
-  model: string;
-  batteryPercent: number;
-  lastReading: string;
-  trackerType: 'Ghost OBD2' | 'Kahu';
-}
-
-// ---------------------------------------------------------------------------
-// Mock data
-// ---------------------------------------------------------------------------
-
-const MOCK_VEHICLES: BatteryVehicle[] = [
-  { stockNumber: 'R1234', year: 2024, make: 'Jeep', model: 'Wrangler', batteryPercent: 92, lastReading: '2 min ago', trackerType: 'Ghost OBD2' },
-  { stockNumber: 'R2345', year: 2023, make: 'Ram', model: '1500', batteryPercent: 85, lastReading: '5 min ago', trackerType: 'Ghost OBD2' },
-  { stockNumber: 'R3456', year: 2024, make: 'Dodge', model: 'Charger', batteryPercent: 78, lastReading: '10 min ago', trackerType: 'Ghost OBD2' },
-  { stockNumber: 'R4567', year: 2023, make: 'Chrysler', model: '300', batteryPercent: 15, lastReading: '3 hrs ago', trackerType: 'Kahu' },
-  { stockNumber: 'R5678', year: 2024, make: 'Jeep', model: 'Grand Cherokee', batteryPercent: 3, lastReading: '12 hrs ago', trackerType: 'Ghost OBD2' },
-  { stockNumber: 'R6789', year: 2024, make: 'Ram', model: '2500', batteryPercent: 45, lastReading: '15 min ago', trackerType: 'Ghost OBD2' },
-  { stockNumber: 'R7890', year: 2023, make: 'Dodge', model: 'Durango', batteryPercent: 32, lastReading: '1 hr ago', trackerType: 'Kahu' },
-  { stockNumber: 'R8901', year: 2024, make: 'Jeep', model: 'Gladiator', batteryPercent: 67, lastReading: '8 min ago', trackerType: 'Ghost OBD2' },
-  { stockNumber: 'R9012', year: 2023, make: 'Chrysler', model: 'Pacifica', batteryPercent: 8, lastReading: '6 hrs ago', trackerType: 'Ghost OBD2' },
-  { stockNumber: 'R0123', year: 2024, make: 'Ram', model: '1500 TRX', batteryPercent: 55, lastReading: '20 min ago', trackerType: 'Kahu' },
-] as const;
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function getBatteryLevel(percent: number): 'critical' | 'warning' | 'healthy' {
-  if (percent < 20) return 'critical';
-  if (percent <= 50) return 'warning';
-  return 'healthy';
+/** Convert a Date to a human-readable relative time string */
+function relativeTime(date: Date): string {
+  const now = Date.now();
+  const diffMs = now - date.getTime();
+  const diffSec = Math.floor(diffMs / 1000);
+
+  if (diffSec < 60) return 'just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} min ago`;
+  const diffHrs = Math.floor(diffMin / 60);
+  if (diffHrs < 24) return `${diffHrs} hr${diffHrs > 1 ? 's' : ''} ago`;
+  const diffDays = Math.floor(diffHrs / 24);
+  return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+}
+
+/** Convert voltage to a rough percentage (12.6V = 100%, 11.8V = 0%) */
+function voltageToPercent(voltage: number): number {
+  const minV = 11.8;
+  const maxV = 12.6;
+  const clamped = Math.max(minV, Math.min(maxV, voltage));
+  return Math.round(((clamped - minV) / (maxV - minV)) * 100);
 }
 
 const BATTERY_LEVEL_CONFIG = {
@@ -84,6 +78,34 @@ const BATTERY_LEVEL_CONFIG = {
     badgeVariant: 'success' as const,
   },
 } as const;
+
+// ---------------------------------------------------------------------------
+// Display type — maps BatteryReport to what the cards need
+// ---------------------------------------------------------------------------
+
+interface BatteryVehicleDisplay {
+  id: string;
+  stockNumber: string;
+  label: string;
+  batteryPercent: number;
+  voltage: number;
+  batteryStatus: BatteryStatus;
+  lastReading: string;
+  deviceId: string;
+}
+
+function mapBatteryReport(r: BatteryReport): BatteryVehicleDisplay {
+  return {
+    id: r.id,
+    stockNumber: r.stockNumber,
+    label: `${r.year} ${r.make} ${r.model}`,
+    batteryPercent: voltageToPercent(r.voltage),
+    voltage: r.voltage,
+    batteryStatus: r.batteryStatus,
+    lastReading: relativeTime(r.lastEventTime),
+    deviceId: r.deviceId,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Summary card
@@ -126,13 +148,12 @@ function SummaryCard({ label, count, icon: Icon, color, bgColor, active, onClick
 // ---------------------------------------------------------------------------
 
 interface BatteryCardProps {
-  vehicle: BatteryVehicle;
-  onJumpStart: (stockNumber: string) => void;
+  vehicle: BatteryVehicleDisplay;
+  onJumpStart: (vehicle: BatteryVehicleDisplay) => void;
 }
 
 function BatteryCard({ vehicle, onJumpStart }: BatteryCardProps) {
-  const level = getBatteryLevel(vehicle.batteryPercent);
-  const config = BATTERY_LEVEL_CONFIG[level];
+  const config = BATTERY_LEVEL_CONFIG[vehicle.batteryStatus];
   const LevelIcon = config.icon;
 
   return (
@@ -145,11 +166,11 @@ function BatteryCard({ vehicle, onJumpStart }: BatteryCardProps) {
                 {vehicle.stockNumber}
               </span>
               <Badge variant={config.badgeVariant} size="sm">
-                {level.charAt(0).toUpperCase() + level.slice(1)}
+                {vehicle.batteryStatus.charAt(0).toUpperCase() + vehicle.batteryStatus.slice(1)}
               </Badge>
             </div>
             <p className="text-sm text-[var(--text-primary)] mt-1">
-              {vehicle.year} {vehicle.make} {vehicle.model}
+              {vehicle.label}
             </p>
             <div className="flex items-center gap-1 mt-1">
               <Clock className="h-3 w-3 text-[var(--text-tertiary)]" />
@@ -158,7 +179,7 @@ function BatteryCard({ vehicle, onJumpStart }: BatteryCardProps) {
               </span>
             </div>
             <span className="text-[10px] text-[var(--text-disabled)] mt-0.5 block">
-              {vehicle.trackerType}
+              {vehicle.voltage.toFixed(1)}V &middot; {vehicle.deviceId}
             </span>
           </div>
           <div className="flex flex-col items-end gap-1">
@@ -180,12 +201,12 @@ function BatteryCard({ vehicle, onJumpStart }: BatteryCardProps) {
         </div>
 
         {/* Jump start button for critical */}
-        {level === 'critical' && (
+        {vehicle.batteryStatus === 'critical' && (
           <Button
             variant="danger"
             size="sm"
             className="mt-3 w-full"
-            onClick={() => onJumpStart(vehicle.stockNumber)}
+            onClick={() => onJumpStart(vehicle)}
           >
             <Zap className="h-3.5 w-3.5" />
             Request Jump Start
@@ -219,32 +240,92 @@ function BatterySkeleton() {
 }
 
 // ---------------------------------------------------------------------------
+// Error state
+// ---------------------------------------------------------------------------
+
+function BatteryError({ message }: { message: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 py-24">
+      <div className="rounded-full bg-[var(--status-error)]/15 p-4">
+        <AlertCircle className="h-8 w-8 text-[var(--status-error)]" strokeWidth={1.5} />
+      </div>
+      <p className="text-sm font-medium text-[var(--text-primary)]">Failed to load battery data</p>
+      <p className="text-xs text-[var(--text-tertiary)] max-w-xs text-center">{message}</p>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
 export default function BatteryPage() {
   const { toast } = useToast();
+  const dealershipId = useTenantStore((s) => s.activeStore?.id ?? '');
+  const userId = useAuthStore((s) => s.firebaseUser?.uid ?? '');
+
   const [filter, setFilter] = useState<BatteryFilter>('all');
 
-  const criticalCount = MOCK_VEHICLES.filter((v) => getBatteryLevel(v.batteryPercent) === 'critical').length;
-  const warningCount = MOCK_VEHICLES.filter((v) => getBatteryLevel(v.batteryPercent) === 'warning').length;
-  const healthyCount = MOCK_VEHICLES.filter((v) => getBatteryLevel(v.batteryPercent) === 'healthy').length;
+  const { batteryReports, loading, error } = useBatteryReports({ dealershipId });
+
+  // Map BatteryReport[] to display type
+  const displayVehicles = useMemo(
+    () => batteryReports.map(mapBatteryReport),
+    [batteryReports],
+  );
+
+  const criticalCount = useMemo(
+    () => batteryReports.filter((r) => r.batteryStatus === 'critical').length,
+    [batteryReports],
+  );
+  const warningCount = useMemo(
+    () => batteryReports.filter((r) => r.batteryStatus === 'warning').length,
+    [batteryReports],
+  );
+  const healthyCount = useMemo(
+    () => batteryReports.filter((r) => r.batteryStatus === 'healthy').length,
+    [batteryReports],
+  );
 
   const filteredVehicles = useMemo(() => {
-    if (filter === 'all') return [...MOCK_VEHICLES].sort((a, b) => a.batteryPercent - b.batteryPercent);
-    return MOCK_VEHICLES
-      .filter((v) => getBatteryLevel(v.batteryPercent) === filter)
-      .sort((a, b) => a.batteryPercent - b.batteryPercent);
-  }, [filter]);
+    const sorted = [...displayVehicles].sort((a, b) => a.batteryPercent - b.batteryPercent);
+    if (filter === 'all') return sorted;
+    return sorted.filter((v) => v.batteryStatus === filter);
+  }, [displayVehicles, filter]);
 
-  const handleJumpStart = (stockNumber: string) => {
-    // TODO: Send jump start request to porter/service team via Firestore
-    toast({
-      type: 'warning',
-      title: `Jump start requested for ${stockNumber}`,
-      description: 'A porter will be notified to jump start this vehicle.',
-    });
+  const handleJumpStart = async (vehicle: BatteryVehicleDisplay) => {
+    try {
+      await createInteraction({
+        type: 'JUMP_START_REQUEST',
+        vehicleId: vehicle.id,
+        userId,
+        dealershipId,
+        notes: `Jump start requested for ${vehicle.stockNumber} (${vehicle.voltage.toFixed(1)}V)`,
+        metadata: {
+          stockNumber: vehicle.stockNumber,
+          voltage: vehicle.voltage,
+          batteryPercent: vehicle.batteryPercent,
+        },
+      });
+      toast({
+        type: 'warning',
+        title: `Jump start requested for ${vehicle.stockNumber}`,
+        description: 'A porter will be notified to jump start this vehicle.',
+      });
+    } catch (err) {
+      toast({
+        type: 'error',
+        title: 'Failed to request jump start',
+        description: err instanceof Error ? err.message : 'An unexpected error occurred.',
+      });
+    }
   };
+
+  // Loading state
+  if (loading) return <BatterySkeleton />;
+
+  // Error state
+  if (error) return <BatteryError message={error.message} />;
 
   return (
     <div className="flex flex-col gap-6">
@@ -252,7 +333,7 @@ export default function BatteryPage() {
       <div className="flex items-center gap-3">
         <h1 className="text-2xl font-bold text-[var(--text-primary)]">Battery Health</h1>
         <Badge variant="default" size="sm">
-          {MOCK_VEHICLES.length} tracked
+          {batteryReports.length} tracked
         </Badge>
       </div>
 
@@ -260,7 +341,7 @@ export default function BatteryPage() {
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
         <SummaryCard
           label="All Vehicles"
-          count={MOCK_VEHICLES.length}
+          count={batteryReports.length}
           icon={Battery}
           color="text-[var(--rally-gold)]"
           bgColor="bg-[var(--rally-gold-muted)]"
@@ -300,7 +381,7 @@ export default function BatteryPage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {filteredVehicles.map((vehicle) => (
           <BatteryCard
-            key={vehicle.stockNumber}
+            key={vehicle.id}
             vehicle={vehicle}
             onJumpStart={handleJumpStart}
           />

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Card,
   CardHeader,
@@ -60,34 +60,33 @@ interface CronJob {
 }
 
 // ---------------------------------------------------------------------------
-// Mock Data
+// API response types
 // ---------------------------------------------------------------------------
 
-const SERVER_METRICS = {
-  cpu: { used: 23, label: 'CPU Usage' },
-  ram: { usedGB: 8.2, totalGB: 24, label: 'RAM Usage' },
-  disk: { usedGB: 142, totalGB: 720, label: 'Disk Usage' },
-  network: { avgMbps: 12, label: 'Network' },
-} as const;
+interface ServerMetrics {
+  cpu: { used: number; label: string };
+  ram: { usedGB: number; totalGB: number; label: string };
+  disk: { usedGB: number; totalGB: number; label: string };
+  network: { avgMbps: number; label: string };
+}
 
-const PM2_PROCESSES: PM2Process[] = [
-  { id: 'pm2-001', name: 'rally-staff', status: 'online', mode: 'cluster', instances: 4, cpuPercent: 12, memoryMB: 880, uptime: '3d 14h', restarts: 0 },
-  { id: 'pm2-002', name: 'rally-manage', status: 'online', mode: 'cluster', instances: 2, cpuPercent: 5, memoryMB: 440, uptime: '3d 14h', restarts: 0 },
-  { id: 'pm2-003', name: 'rally-admin', status: 'online', mode: 'fork', instances: 1, cpuPercent: 2, memoryMB: 210, uptime: '3d 14h', restarts: 0 },
-  { id: 'pm2-004', name: 'rally-portal', status: 'online', mode: 'cluster', instances: 2, cpuPercent: 8, memoryMB: 360, uptime: '3d 14h', restarts: 0 },
-] as const;
+interface BroadcastInfo {
+  message: string;
+  timestamp: string;
+}
 
-const CRON_JOBS: CronJob[] = [
-  { id: 'cron-001', name: 'Cleanup deprovisioned tenants', schedule: 'Daily at 3:00 AM', lastRun: '2026-02-24T03:00:00Z', nextRun: '2026-02-25T03:00:00Z', status: 'active' },
-  { id: 'cron-002', name: 'Analytics rollup', schedule: 'Hourly', lastRun: '2026-02-24T09:00:00Z', nextRun: '2026-02-24T10:00:00Z', status: 'active' },
-  { id: 'cron-003', name: 'SSL cert renewal check', schedule: 'Daily at 2:00 AM', lastRun: '2026-02-24T02:00:00Z', nextRun: '2026-02-25T02:00:00Z', status: 'active' },
-  { id: 'cron-004', name: 'PM2 log rotation', schedule: 'Daily at midnight', lastRun: '2026-02-24T00:00:00Z', nextRun: '2026-02-25T00:00:00Z', status: 'active' },
-] as const;
-
-const LAST_BROADCAST = {
-  message: 'Scheduled maintenance window: Feb 22 2:00-4:00 AM CST. Expect brief downtime.',
-  timestamp: '2026-02-21T18:00:00Z',
-} as const;
+interface HealthResponse {
+  success: boolean;
+  data: {
+    cpu: ServerMetrics['cpu'];
+    ram: ServerMetrics['ram'];
+    disk: ServerMetrics['disk'];
+    network: ServerMetrics['network'];
+    pm2: PM2Process[];
+    cronJobs: CronJob[];
+    lastBroadcast: BroadcastInfo;
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -162,39 +161,91 @@ function MetricBar({
 
 export default function SystemHealthPage() {
   const { toast } = useToast();
-  const [loading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [metrics, setMetrics] = useState<ServerMetrics | null>(null);
+  const [pm2Processes, setPm2Processes] = useState<PM2Process[]>([]);
+  const [cronJobs, setCronJobs] = useState<CronJob[]>([]);
+  const [lastBroadcast, setLastBroadcast] = useState<BroadcastInfo | null>(null);
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [broadcastMessage, setBroadcastMessage] = useState('');
   const [confirmingAction, setConfirmingAction] = useState<string | null>(null);
 
+  // ── Fetch system health from API ────────────────────────────────
+
+  useEffect(() => {
+    setLoading(true);
+    fetch('/api/admin/system/health')
+      .then((res) => res.json())
+      .then((data: HealthResponse) => {
+        if (data.data) {
+          setMetrics({
+            cpu: data.data.cpu,
+            ram: data.data.ram,
+            disk: data.data.disk,
+            network: data.data.network,
+          });
+          setPm2Processes(data.data.pm2);
+          setCronJobs(data.data.cronJobs);
+          setLastBroadcast(data.data.lastBroadcast);
+        }
+      })
+      .catch(() => {
+        toast({ type: 'error', title: 'Failed to load system health', description: 'Could not reach the system health API.' });
+      })
+      .finally(() => setLoading(false));
+  }, [toast]);
+
   const handleMaintenanceToggle = useCallback(() => {
-    if (!maintenanceMode) {
-      // Turning on — confirm
-      setMaintenanceMode(true);
-      toast({
-        type: 'warning',
-        title: 'Maintenance Mode Enabled',
-        description: 'All user-facing apps will show maintenance page.',
+    const newState = !maintenanceMode;
+    fetch('/api/admin/system/health', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'maintenance', enabled: newState }),
+    })
+      .then((res) => res.json())
+      .then((data: { success?: boolean; error?: string }) => {
+        if (data.success) {
+          setMaintenanceMode(newState);
+          toast({
+            type: newState ? 'warning' : 'success',
+            title: newState ? 'Maintenance Mode Enabled' : 'Maintenance Mode Disabled',
+            description: newState
+              ? 'All user-facing apps will show maintenance page.'
+              : 'All apps are back online.',
+          });
+        } else {
+          toast({ type: 'error', title: 'Action failed', description: data.error ?? 'Unknown error' });
+        }
+      })
+      .catch(() => {
+        toast({ type: 'error', title: 'Action failed', description: 'Network error' });
       });
-    } else {
-      setMaintenanceMode(false);
-      toast({
-        type: 'success',
-        title: 'Maintenance Mode Disabled',
-        description: 'All apps are back online.',
-      });
-    }
   }, [maintenanceMode, toast]);
 
   const handleRestart = useCallback(
     (processName: string) => {
       if (confirmingAction === processName) {
         setConfirmingAction(null);
-        toast({
-          type: 'success',
-          title: `Restarting ${processName}`,
-          description: 'Process reload initiated.',
-        });
+        fetch('/api/admin/system/health', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'restart', process: processName }),
+        })
+          .then((res) => res.json())
+          .then((data: { success?: boolean; error?: string }) => {
+            if (data.success) {
+              toast({
+                type: 'success',
+                title: `Restarting ${processName}`,
+                description: 'Process reload initiated.',
+              });
+            } else {
+              toast({ type: 'error', title: 'Restart failed', description: data.error ?? 'Unknown error' });
+            }
+          })
+          .catch(() => {
+            toast({ type: 'error', title: 'Restart failed', description: 'Network error' });
+          });
       } else {
         setConfirmingAction(processName);
         // Auto-clear confirmation after 3s
@@ -209,11 +260,26 @@ export default function SystemHealthPage() {
       const stopKey = `stop-${processName}`;
       if (confirmingAction === stopKey) {
         setConfirmingAction(null);
-        toast({
-          type: 'warning',
-          title: `Stopping ${processName}`,
-          description: 'Process will be stopped.',
-        });
+        fetch('/api/admin/system/health', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'stop', process: processName }),
+        })
+          .then((res) => res.json())
+          .then((data: { success?: boolean; error?: string }) => {
+            if (data.success) {
+              toast({
+                type: 'warning',
+                title: `Stopping ${processName}`,
+                description: 'Process will be stopped.',
+              });
+            } else {
+              toast({ type: 'error', title: 'Stop failed', description: data.error ?? 'Unknown error' });
+            }
+          })
+          .catch(() => {
+            toast({ type: 'error', title: 'Stop failed', description: 'Network error' });
+          });
       } else {
         setConfirmingAction(stopKey);
         setTimeout(() => setConfirmingAction(null), 3000);
@@ -227,12 +293,31 @@ export default function SystemHealthPage() {
       toast({ type: 'error', title: 'Error', description: 'Message cannot be empty.' });
       return;
     }
-    toast({
-      type: 'success',
-      title: 'Broadcast Sent',
-      description: `Message sent to all connected clients.`,
-    });
-    setBroadcastMessage('');
+    fetch('/api/admin/system/health', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'broadcast', message: broadcastMessage.trim() }),
+    })
+      .then((res) => res.json())
+      .then((data: { success?: boolean; error?: string }) => {
+        if (data.success) {
+          toast({
+            type: 'success',
+            title: 'Broadcast Sent',
+            description: 'Message sent to all connected clients.',
+          });
+          setLastBroadcast({
+            message: broadcastMessage.trim(),
+            timestamp: new Date().toISOString(),
+          });
+          setBroadcastMessage('');
+        } else {
+          toast({ type: 'error', title: 'Broadcast failed', description: data.error ?? 'Unknown error' });
+        }
+      })
+      .catch(() => {
+        toast({ type: 'error', title: 'Broadcast failed', description: 'Network error' });
+      });
   }, [broadcastMessage, toast]);
 
   // PM2 table columns
@@ -345,12 +430,12 @@ export default function SystemHealthPage() {
 
   // Total resources
   const totalCPU = useMemo(
-    () => PM2_PROCESSES.reduce((acc, p) => acc + p.cpuPercent, 0),
-    [],
+    () => pm2Processes.reduce((acc, p) => acc + p.cpuPercent, 0),
+    [pm2Processes],
   );
   const totalMemory = useMemo(
-    () => PM2_PROCESSES.reduce((acc, p) => acc + p.memoryMB, 0),
-    [],
+    () => pm2Processes.reduce((acc, p) => acc + p.memoryMB, 0),
+    [pm2Processes],
   );
 
   if (loading) {
@@ -405,6 +490,7 @@ export default function SystemHealthPage() {
       )}
 
       {/* ── Server Metrics ─────────────────────────────────────── */}
+      {metrics ? (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* CPU */}
         <Card>
@@ -412,16 +498,16 @@ export default function SystemHealthPage() {
             <div className="flex items-center gap-2 mb-3">
               <Cpu className="h-4 w-4 text-rally-gold" />
               <span className="text-xs font-medium uppercase tracking-wider text-text-secondary">
-                {SERVER_METRICS.cpu.label}
+                {metrics.cpu.label}
               </span>
             </div>
             <p className="text-3xl font-bold text-text-primary font-[family-name:var(--font-geist-mono)] mb-2">
-              {SERVER_METRICS.cpu.used}%
+              {metrics.cpu.used}%
             </p>
             <div className="h-2 w-full rounded-full bg-surface-overlay overflow-hidden">
               <div
                 className="h-2 rounded-full bg-rally-gold transition-all"
-                style={{ width: `${SERVER_METRICS.cpu.used}%` }}
+                style={{ width: `${metrics.cpu.used}%` }}
               />
             </div>
           </CardContent>
@@ -433,17 +519,17 @@ export default function SystemHealthPage() {
             <div className="flex items-center gap-2 mb-3">
               <MemoryStick className="h-4 w-4 text-status-info" />
               <span className="text-xs font-medium uppercase tracking-wider text-text-secondary">
-                {SERVER_METRICS.ram.label}
+                {metrics.ram.label}
               </span>
             </div>
             <p className="text-3xl font-bold text-text-primary font-[family-name:var(--font-geist-mono)] mb-2">
-              {SERVER_METRICS.ram.usedGB}
-              <span className="text-sm text-text-secondary ml-1">/ {SERVER_METRICS.ram.totalGB}GB</span>
+              {metrics.ram.usedGB}
+              <span className="text-sm text-text-secondary ml-1">/ {metrics.ram.totalGB}GB</span>
             </p>
             <div className="h-2 w-full rounded-full bg-surface-overlay overflow-hidden">
               <div
                 className="h-2 rounded-full bg-status-info transition-all"
-                style={{ width: `${Math.round((SERVER_METRICS.ram.usedGB / SERVER_METRICS.ram.totalGB) * 100)}%` }}
+                style={{ width: `${Math.round((metrics.ram.usedGB / metrics.ram.totalGB) * 100)}%` }}
               />
             </div>
           </CardContent>
@@ -455,17 +541,17 @@ export default function SystemHealthPage() {
             <div className="flex items-center gap-2 mb-3">
               <HardDrive className="h-4 w-4 text-status-warning" />
               <span className="text-xs font-medium uppercase tracking-wider text-text-secondary">
-                {SERVER_METRICS.disk.label}
+                {metrics.disk.label}
               </span>
             </div>
             <p className="text-3xl font-bold text-text-primary font-[family-name:var(--font-geist-mono)] mb-2">
-              {SERVER_METRICS.disk.usedGB}
-              <span className="text-sm text-text-secondary ml-1">/ {SERVER_METRICS.disk.totalGB}GB</span>
+              {metrics.disk.usedGB}
+              <span className="text-sm text-text-secondary ml-1">/ {metrics.disk.totalGB}GB</span>
             </p>
             <div className="h-2 w-full rounded-full bg-surface-overlay overflow-hidden">
               <div
                 className="h-2 rounded-full bg-status-warning transition-all"
-                style={{ width: `${Math.round((SERVER_METRICS.disk.usedGB / SERVER_METRICS.disk.totalGB) * 100)}%` }}
+                style={{ width: `${Math.round((metrics.disk.usedGB / metrics.disk.totalGB) * 100)}%` }}
               />
             </div>
           </CardContent>
@@ -477,11 +563,11 @@ export default function SystemHealthPage() {
             <div className="flex items-center gap-2 mb-3">
               <Network className="h-4 w-4 text-status-success" />
               <span className="text-xs font-medium uppercase tracking-wider text-text-secondary">
-                {SERVER_METRICS.network.label}
+                {metrics.network.label}
               </span>
             </div>
             <p className="text-3xl font-bold text-text-primary font-[family-name:var(--font-geist-mono)] mb-2">
-              {SERVER_METRICS.network.avgMbps}
+              {metrics.network.avgMbps}
               <span className="text-sm text-text-secondary ml-1">Mbps avg</span>
             </p>
             {/* Sparkline placeholder */}
@@ -497,6 +583,9 @@ export default function SystemHealthPage() {
           </CardContent>
         </Card>
       </div>
+      ) : !loading ? (
+        <div className="text-sm text-text-secondary">No metrics available</div>
+      ) : null}
 
       {/* ── Resource Summary ───────────────────────────────────── */}
       <div className="flex items-center gap-4 text-xs text-text-tertiary">
@@ -522,7 +611,7 @@ export default function SystemHealthPage() {
         </h2>
         <DataTable<PM2Process>
           columns={pm2Columns}
-          data={PM2_PROCESSES as unknown as PM2Process[]}
+          data={pm2Processes}
           emptyMessage="No processes"
           emptyDescription="No PM2 processes found."
           emptyIcon={Server}
@@ -559,17 +648,19 @@ export default function SystemHealthPage() {
             </Button>
 
             {/* Last broadcast */}
+            {lastBroadcast && (
             <div className="border-t border-surface-border pt-3">
               <p className="text-[10px] text-text-tertiary uppercase tracking-wider mb-1.5">
                 Last Broadcast
               </p>
               <p className="text-sm text-text-secondary">
-                {LAST_BROADCAST.message}
+                {lastBroadcast.message}
               </p>
               <p className="text-[10px] text-text-tertiary mt-1 font-[family-name:var(--font-geist-mono)]">
-                {formatTimestamp(LAST_BROADCAST.timestamp)}
+                {formatTimestamp(lastBroadcast.timestamp)}
               </p>
             </div>
+            )}
           </CardContent>
         </Card>
 
@@ -585,7 +676,7 @@ export default function SystemHealthPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {CRON_JOBS.map((job) => (
+              {cronJobs.map((job) => (
                 <div
                   key={job.id}
                   className="flex items-start gap-3 p-3 rounded-rally bg-surface-overlay border border-surface-border"

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   User,
@@ -22,8 +22,9 @@ import {
   Skeleton,
   Avatar,
 } from '@rally/ui';
+import { useToast } from '@rally/ui';
 import { useAuthStore, useTenantStore } from '@rally/services';
-import { USER_ROLE_DISPLAY, type UserRole } from '@rally/firebase';
+import { USER_ROLE_DISPLAY, type UserRole, updateUserPreferences } from '@rally/firebase';
 
 // ---------------------------------------------------------------------------
 // Detail row component
@@ -117,16 +118,46 @@ function SettingsSkeleton() {
 
 export default function SettingsPage() {
   const router = useRouter();
+  const { toast } = useToast();
   const firebaseUser = useAuthStore((s) => s.firebaseUser);
   const dealerUser = useAuthStore((s) => s.dealerUser);
   const isLoading = useAuthStore((s) => s.isLoading);
   const signOut = useAuthStore((s) => s.signOut);
   const activeStore = useTenantStore((s) => s.activeStore);
 
+  // Local preference state — initialized from Firestore, writes back on change
+  const preferences = dealerUser?.preferences;
+  const [mapView, setMapView] = useState<string>(preferences?.defaultMapView ?? 'map');
+  const [notifications, setNotifications] = useState<boolean>(preferences?.notificationsEnabled ?? true);
+  const [saving, setSaving] = useState(false);
+
   const handleSignOut = useCallback(async () => {
     await signOut();
     router.push('/login');
   }, [signOut, router]);
+
+  const handlePreferenceChange = useCallback(async (key: string, value: unknown) => {
+    const uid = firebaseUser?.uid;
+    if (!uid) return;
+
+    setSaving(true);
+    try {
+      const updatedPrefs = {
+        ...preferences,
+        [key]: value,
+      };
+      await updateUserPreferences(uid, updatedPrefs);
+      toast({ type: 'success', title: 'Preference saved' });
+    } catch (err) {
+      toast({
+        type: 'error',
+        title: 'Failed to save',
+        description: err instanceof Error ? err.message : 'Could not update preference.',
+      });
+    } finally {
+      setSaving(false);
+    }
+  }, [firebaseUser?.uid, preferences, toast]);
 
   if (isLoading) {
     return (
@@ -143,11 +174,6 @@ export default function SettingsPage() {
   const role = (dealerUser?.role ?? 'salesperson') as UserRole;
   const roleDisplay = USER_ROLE_DISPLAY[role] ?? 'Staff';
   const photoURL = dealerUser?.photoURL ?? firebaseUser?.photoURL ?? undefined;
-
-  // Preferences (readonly display for now)
-  const preferences = dealerUser?.preferences;
-  const defaultMapView = preferences?.defaultMapView ?? 'map';
-  const notificationsEnabled = preferences?.notificationsEnabled ?? true;
 
   return (
     <div className="flex flex-col gap-6">
@@ -200,26 +226,26 @@ export default function SettingsPage() {
               icon={Map}
               label="Satellite Map View"
               description="Use satellite imagery as the default map view"
-              checked={defaultMapView === 'satellite'}
-              onChange={() => {
-                // TODO: Write preference to Firestore
+              checked={mapView === 'satellite'}
+              onChange={(checked) => {
+                const newVal = checked ? 'satellite' : 'map';
+                setMapView(newVal);
+                handlePreferenceChange('defaultMapView', newVal);
               }}
-              disabled
+              disabled={saving}
             />
             <ToggleRow
               icon={Bell}
               label="Notifications"
               description="Receive push notifications for activity updates"
-              checked={notificationsEnabled}
-              onChange={() => {
-                // TODO: Write preference to Firestore
+              checked={notifications}
+              onChange={(checked) => {
+                setNotifications(checked);
+                handlePreferenceChange('notificationsEnabled', checked);
               }}
-              disabled
+              disabled={saving}
             />
           </div>
-          <p className="mt-3 text-xs text-[var(--text-tertiary)]">
-            Preference sync will be available in a future update.
-          </p>
         </CardContent>
       </Card>
 

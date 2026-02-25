@@ -9,6 +9,7 @@ import {
   Calendar,
   Tag,
   ChevronRight,
+  AlertCircle,
 } from 'lucide-react';
 import {
   Card,
@@ -20,97 +21,89 @@ import {
   EmptyState,
 } from '@rally/ui';
 import { useToast } from '@rally/ui';
+import { useCrmCustomers } from '@rally/firebase';
+import { useTenantStore } from '@rally/services';
+import type { CrmCustomer, CrmSource } from '@rally/firebase';
 
 // ---------------------------------------------------------------------------
-// Types
+// Helpers
 // ---------------------------------------------------------------------------
 
-type CustomerSource = 'Walk-in' | 'Phone' | 'Web Lead' | 'Referral';
+/** Convert a Date to a human-readable relative time string */
+function relativeTime(date: Date): string {
+  const now = Date.now();
+  const diffMs = now - date.getTime();
+  const diffSec = Math.floor(diffMs / 1000);
 
-interface Customer {
-  id: string;
-  name: string;
-  phone: string;
-  email: string;
-  lastInteraction: string;
-  interestedVehicles: string[];
-  source: CustomerSource;
+  if (diffSec < 60) return 'just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} min ago`;
+  const diffHrs = Math.floor(diffMin / 60);
+  if (diffHrs < 24) return `${diffHrs} hr${diffHrs > 1 ? 's' : ''} ago`;
+  const diffDays = Math.floor(diffHrs / 24);
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return `${diffDays} days ago`;
+  const diffWeeks = Math.floor(diffDays / 7);
+  if (diffWeeks === 1) return '1 week ago';
+  return `${diffWeeks} weeks ago`;
 }
-
-// ---------------------------------------------------------------------------
-// Mock data
-// ---------------------------------------------------------------------------
-
-const MOCK_CUSTOMERS: Customer[] = [
-  {
-    id: 'c1',
-    name: 'John Anderson',
-    phone: '(615) 555-0101',
-    email: 'john.anderson@email.com',
-    lastInteraction: 'Today',
-    interestedVehicles: ['R1234'],
-    source: 'Walk-in',
-  },
-  {
-    id: 'c2',
-    name: 'Sarah Mitchell',
-    phone: '(615) 555-0202',
-    email: 'sarah.m@email.com',
-    lastInteraction: 'Yesterday',
-    interestedVehicles: ['R2345', 'R3456'],
-    source: 'Web Lead',
-  },
-  {
-    id: 'c3',
-    name: 'Mike Torres',
-    phone: '(615) 555-0303',
-    email: 'mtorres@email.com',
-    lastInteraction: '3 days ago',
-    interestedVehicles: ['R4567'],
-    source: 'Phone',
-  },
-  {
-    id: 'c4',
-    name: 'Emily Chen',
-    phone: '(615) 555-0404',
-    email: 'echen@email.com',
-    lastInteraction: '1 week ago',
-    interestedVehicles: [],
-    source: 'Referral',
-  },
-  {
-    id: 'c5',
-    name: 'David Williams',
-    phone: '(615) 555-0505',
-    email: 'dwilliams@email.com',
-    lastInteraction: '2 days ago',
-    interestedVehicles: ['R5678'],
-    source: 'Walk-in',
-  },
-] as const;
 
 // ---------------------------------------------------------------------------
 // Source badge config
 // ---------------------------------------------------------------------------
 
-const SOURCE_CONFIG = {
-  'Walk-in': { variant: 'gold' as const },
-  'Phone': { variant: 'info' as const },
-  'Web Lead': { variant: 'success' as const },
-  'Referral': { variant: 'warning' as const },
+/** Map CrmSource to badge config. Falls back to 'default' for unknown sources. */
+const SOURCE_BADGE_CONFIG: Record<string, { variant: 'gold' | 'info' | 'success' | 'warning' | 'default'; label: string }> = {
+  driveentric: { variant: 'gold', label: 'DriveCentric' },
+  elead: { variant: 'info', label: 'eLead' },
+  manual: { variant: 'success', label: 'Manual' },
 } as const;
+
+function getSourceBadge(crmSource: CrmSource, source?: string): { variant: 'gold' | 'info' | 'success' | 'warning' | 'default'; label: string } {
+  const config = SOURCE_BADGE_CONFIG[crmSource];
+  if (config) return config;
+  return { variant: 'default', label: source ?? crmSource };
+}
+
+// ---------------------------------------------------------------------------
+// Display type — maps CrmCustomer to what the cards need
+// ---------------------------------------------------------------------------
+
+interface CustomerDisplay {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+  lastInteraction: string;
+  vehicleOfInterest: string | null;
+  crmSource: CrmSource;
+  source?: string;
+}
+
+function mapCrmCustomer(c: CrmCustomer): CustomerDisplay {
+  return {
+    id: c.id,
+    name: c.fullName,
+    phone: c.phone ?? '',
+    email: c.email ?? '',
+    lastInteraction: c.lastInteraction ? relativeTime(c.lastInteraction) : 'Never',
+    vehicleOfInterest: c.vehicleOfInterest ?? null,
+    crmSource: c.crmSource,
+    source: c.source,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Customer card
 // ---------------------------------------------------------------------------
 
 interface CustomerCardProps {
-  customer: Customer;
-  onSelect: (customer: Customer) => void;
+  customer: CustomerDisplay;
+  onSelect: (customer: CustomerDisplay) => void;
 }
 
 function CustomerCard({ customer, onSelect }: CustomerCardProps) {
-  const sourceConfig = SOURCE_CONFIG[customer.source];
+  const sourceBadge = getSourceBadge(customer.crmSource, customer.source);
 
   return (
     <button
@@ -129,22 +122,26 @@ function CustomerCard({ customer, onSelect }: CustomerCardProps) {
               <h3 className="text-sm font-semibold text-[var(--text-primary)]">
                 {customer.name}
               </h3>
-              <Badge variant={sourceConfig.variant} size="sm">
-                {customer.source}
+              <Badge variant={sourceBadge.variant} size="sm">
+                {sourceBadge.label}
               </Badge>
             </div>
           </div>
 
           {/* Contact info */}
           <div className="mt-3 flex flex-col gap-1">
-            <div className="flex items-center gap-2">
-              <Phone className="h-3 w-3 text-[var(--text-tertiary)]" />
-              <span className="text-xs text-[var(--text-secondary)]">{customer.phone}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Mail className="h-3 w-3 text-[var(--text-tertiary)]" />
-              <span className="text-xs text-[var(--text-secondary)]">{customer.email}</span>
-            </div>
+            {customer.phone && (
+              <div className="flex items-center gap-2">
+                <Phone className="h-3 w-3 text-[var(--text-tertiary)]" />
+                <span className="text-xs text-[var(--text-secondary)]">{customer.phone}</span>
+              </div>
+            )}
+            {customer.email && (
+              <div className="flex items-center gap-2">
+                <Mail className="h-3 w-3 text-[var(--text-tertiary)]" />
+                <span className="text-xs text-[var(--text-secondary)]">{customer.email}</span>
+              </div>
+            )}
             <div className="flex items-center gap-2">
               <Calendar className="h-3 w-3 text-[var(--text-tertiary)]" />
               <span className="text-xs text-[var(--text-tertiary)]">
@@ -153,20 +150,13 @@ function CustomerCard({ customer, onSelect }: CustomerCardProps) {
             </div>
           </div>
 
-          {/* Interested vehicles */}
-          {customer.interestedVehicles.length > 0 && (
+          {/* Vehicle of interest */}
+          {customer.vehicleOfInterest && (
             <div className="mt-2 flex items-center gap-1.5">
               <Tag className="h-3 w-3 text-[var(--text-tertiary)]" />
-              <div className="flex flex-wrap gap-1">
-                {customer.interestedVehicles.map((stk) => (
-                  <span
-                    key={stk}
-                    className="inline-flex items-center rounded-full bg-[var(--rally-gold-muted)] px-2 py-0.5 font-mono text-[10px] font-medium text-[var(--rally-gold)]"
-                  >
-                    {stk}
-                  </span>
-                ))}
-              </div>
+              <span className="inline-flex items-center rounded-full bg-[var(--rally-gold-muted)] px-2 py-0.5 font-mono text-[10px] font-medium text-[var(--rally-gold)]">
+                {customer.vehicleOfInterest}
+              </span>
             </div>
           )}
         </div>
@@ -196,25 +186,43 @@ function CRMSkeleton() {
 }
 
 // ---------------------------------------------------------------------------
+// Error state
+// ---------------------------------------------------------------------------
+
+function CRMError({ message }: { message: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 py-24">
+      <div className="rounded-full bg-[var(--status-error)]/15 p-4">
+        <AlertCircle className="h-8 w-8 text-[var(--status-error)]" strokeWidth={1.5} />
+      </div>
+      <p className="text-sm font-medium text-[var(--text-primary)]">Failed to load customer data</p>
+      <p className="text-xs text-[var(--text-tertiary)] max-w-xs text-center">{message}</p>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
 export default function CRMPage() {
   const { toast } = useToast();
+  const dealershipId = useTenantStore((s) => s.activeStore?.id ?? '');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const filteredCustomers = useMemo(() => {
-    if (!searchQuery.trim()) return MOCK_CUSTOMERS;
-    const q = searchQuery.toLowerCase();
-    return MOCK_CUSTOMERS.filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        c.phone.includes(q) ||
-        c.email.toLowerCase().includes(q)
-    );
-  }, [searchQuery]);
+  // Pass search to the hook for client-side filtering within the hook
+  const { customers, loading, error } = useCrmCustomers({
+    dealershipId,
+    search: searchQuery,
+  });
 
-  const handleSelectCustomer = (customer: Customer) => {
+  // Map CrmCustomer[] to display type
+  const displayCustomers = useMemo(
+    () => customers.map(mapCrmCustomer),
+    [customers],
+  );
+
+  const handleSelectCustomer = (customer: CustomerDisplay) => {
     // TODO: Navigate to customer detail page when built
     toast({
       type: 'info',
@@ -224,6 +232,12 @@ export default function CRMPage() {
   };
 
   const isSearching = searchQuery.trim().length > 0;
+
+  // Loading state
+  if (loading) return <CRMSkeleton />;
+
+  // Error state
+  if (error) return <CRMError message={error.message} />;
 
   return (
     <div className="flex flex-col gap-6">
@@ -246,14 +260,14 @@ export default function CRMPage() {
           {isSearching ? 'Search Results' : 'Recent Customers'}
         </h2>
         <Badge variant="default" size="sm">
-          {filteredCustomers.length} {filteredCustomers.length === 1 ? 'customer' : 'customers'}
+          {displayCustomers.length} {displayCustomers.length === 1 ? 'customer' : 'customers'}
         </Badge>
       </div>
 
       {/* Customer list */}
-      {filteredCustomers.length > 0 ? (
+      {displayCustomers.length > 0 ? (
         <div className="flex flex-col gap-3">
-          {filteredCustomers.map((customer) => (
+          {displayCustomers.map((customer) => (
             <CustomerCard
               key={customer.id}
               customer={customer}
@@ -264,14 +278,18 @@ export default function CRMPage() {
       ) : (
         <EmptyState
           icon={Search}
-          title="No customers found"
-          description={`No results for "${searchQuery}". Try a different search term.`}
+          title={isSearching ? 'No customers found' : 'No customers yet'}
+          description={
+            isSearching
+              ? `No results for "${searchQuery}". Try a different search term.`
+              : 'Customer data will appear here once CRM sync is active.'
+          }
         />
       )}
 
       {/* Info footer */}
       <p className="text-xs text-[var(--text-tertiary)] text-center">
-        CRM data will sync from your dealership&apos;s DMS in real-time.
+        CRM data syncs from your dealership&apos;s DMS in real-time.
       </p>
     </div>
   );

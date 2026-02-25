@@ -97,7 +97,6 @@ export default function PortalDashboardPage() {
 
   const dealershipId = currentStore?.id ?? '';
 
-  // TODO: Wire up Firebase hooks — currently uses real hooks scoped to tenant
   const { vehicles, loading: vehiclesLoading } = useVehicles({ dealershipId });
   const { activities, loading: activitiesLoading } = useActivities({
     dealershipId,
@@ -128,8 +127,7 @@ export default function PortalDashboardPage() {
   // Recent activities (first 5)
   const recentActivities = useMemo(() => activities.slice(0, 5), [activities]);
 
-  // TODO: Read tenant name from Firestore tenant config
-  const tenantName = currentStore?.name ?? 'Gallatin CDJR';
+  const tenantName = currentStore?.name ?? 'Your Dealership';
 
   if (authLoading || vehiclesLoading || activitiesLoading) {
     return <DashboardSkeleton />;

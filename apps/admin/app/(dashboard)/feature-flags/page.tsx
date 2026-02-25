@@ -9,9 +9,12 @@ import {
   Button,
   Badge,
   Input,
+  Skeleton,
   EmptyState,
   useToast,
 } from '@rally/ui';
+import { useFeatureFlags } from '@rally/firebase';
+import type { FeatureFlag as FirestoreFeatureFlag } from '@rally/firebase';
 import {
   ToggleLeft,
   Plus,
@@ -82,98 +85,21 @@ function ToggleSwitch({
   );
 }
 
-// ── Mock Data ──────────────────────────────────────────────────────
+// ── Map Firestore flags to page-level FeatureFlag ─────────────────
 
-const INITIAL_FLAGS: FeatureFlag[] = [
-  {
-    id: 'ff-1',
-    key: 'nfc_scanning',
-    name: 'NFC Tag Scanning',
-    description: 'Web NFC for vehicle scanning. Enables tap-to-scan on compatible Android devices and NFC readers.',
-    enabled: true,
-    rolloutPercentage: 100,
-    tenantOverrides: { 'gallatin-cdjr': true, 'acme-motors': true, 'prestige-auto': false },
-    updatedAt: '2026-02-23T14:30:00Z',
-    updatedBy: 'trey@rally.vin',
-  },
-  {
-    id: 'ff-2',
-    key: 'ai_assistant',
-    name: 'AI Sales Assistant',
-    description: 'ChatGPT-powered sales helper for generating vehicle descriptions, customer responses, and deal summaries.',
-    enabled: true,
-    rolloutPercentage: 60,
-    tenantOverrides: { 'gallatin-cdjr': true, 'acme-motors': false },
-    updatedAt: '2026-02-22T09:15:00Z',
-    updatedBy: 'trey@rally.vin',
-  },
-  {
-    id: 'ff-3',
-    key: 'fleet_tracking',
-    name: 'Fleet GPS Tracking',
-    description: 'Real-time vehicle GPS tracking via Ghost OBD2 hardware. Shows live positions on dealership lot map.',
-    enabled: false,
-    rolloutPercentage: 0,
-    tenantOverrides: {},
-    updatedAt: '2026-02-20T16:45:00Z',
-    updatedBy: 'trey@rally.vin',
-  },
-  {
-    id: 'ff-4',
-    key: 'battery_reports',
-    name: 'Battery Health Reports',
-    description: 'OBD2-powered battery monitoring and health reports. Alerts staff when vehicles need attention.',
-    enabled: true,
-    rolloutPercentage: 25,
-    tenantOverrides: { 'gallatin-cdjr': true },
-    updatedAt: '2026-02-21T11:00:00Z',
-    updatedBy: 'trey@rally.vin',
-  },
-  {
-    id: 'ff-5',
-    key: 'live_translate',
-    name: 'Live Translation',
-    description: 'Real-time call translation powered by Gemini Live API. Supports Spanish, Vietnamese, and Arabic.',
-    enabled: false,
-    rolloutPercentage: 0,
-    tenantOverrides: {},
-    updatedAt: '2026-02-19T08:30:00Z',
-    updatedBy: 'trey@rally.vin',
-  },
-  {
-    id: 'ff-6',
-    key: 'digital_cards',
-    name: 'Digital Business Cards',
-    description: 'Apple Wallet integration for digital business cards. Staff can share contact info via NFC or QR code.',
-    enabled: true,
-    rolloutPercentage: 80,
-    tenantOverrides: { 'gallatin-cdjr': true, 'prestige-auto': true, 'acme-motors': true },
-    updatedAt: '2026-02-23T17:00:00Z',
-    updatedBy: 'trey@rally.vin',
-  },
-  {
-    id: 'ff-7',
-    key: 'ar_walkaround',
-    name: 'AR Vehicle Walkaround',
-    description: 'ARKit-powered exterior walkaround visualization. Customers can view vehicles in their driveway.',
-    enabled: false,
-    rolloutPercentage: 0,
-    tenantOverrides: {},
-    updatedAt: '2026-02-18T13:20:00Z',
-    updatedBy: 'trey@rally.vin',
-  },
-  {
-    id: 'ff-8',
-    key: 'vin_scanner',
-    name: 'VIN Barcode Scanner',
-    description: 'Camera-based VIN barcode scanning for quick vehicle lookups. Uses iOS Vision framework on native, web camera API on browser.',
-    enabled: true,
-    rolloutPercentage: 100,
-    tenantOverrides: { 'gallatin-cdjr': true, 'acme-motors': true, 'prestige-auto': true },
-    updatedAt: '2026-02-24T10:00:00Z',
-    updatedBy: 'trey@rally.vin',
-  },
-] as const;
+function mapFirestoreFlag(f: FirestoreFeatureFlag): FeatureFlag {
+  return {
+    id: f.id ?? f.key,
+    key: f.key,
+    name: f.key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+    description: f.description ?? '',
+    enabled: f.enabled,
+    rolloutPercentage: f.rolloutPercentage ?? (f.enabled ? 100 : 0),
+    tenantOverrides: f.tenantOverrides ?? {},
+    updatedAt: f.updatedAt instanceof Date ? f.updatedAt.toISOString() : String(f.updatedAt),
+    updatedBy: '',
+  };
+}
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -339,62 +265,81 @@ function FlagCard({
 
 export default function FeatureFlagsPage() {
   const { toast } = useToast();
-  const [flags, setFlags] = useState<FeatureFlag[]>(
-    INITIAL_FLAGS.map((f) => ({ ...f, tenantOverrides: { ...f.tenantOverrides } }))
-  );
+  const { featureFlags: firestoreFlags, loading, error } = useFeatureFlags();
+  const flags: FeatureFlag[] = firestoreFlags.map(mapFirestoreFlag);
   const [search, setSearch] = useState('');
 
   // ── Handlers ─────────────────────────────────────────────────────
 
   const handleToggle = useCallback(
     (id: string, enabled: boolean) => {
-      setFlags((prev) =>
-        prev.map((f) =>
-          f.id === id
-            ? { ...f, enabled, rolloutPercentage: enabled ? (f.rolloutPercentage > 0 ? f.rolloutPercentage : 100) : 0 }
-            : f
-        )
-      );
       const flag = flags.find((f) => f.id === id);
-      toast({
-        type: enabled ? 'success' : 'warning',
-        title: `${flag?.name ?? 'Flag'} ${enabled ? 'enabled' : 'disabled'}`,
-        description: enabled
-          ? 'Flag is now active globally.'
-          : 'Flag has been disabled for all tenants.',
-      });
+      fetch(`/api/admin/feature-flags/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      })
+        .then((res) => res.json())
+        .then((data: { success?: boolean; error?: string }) => {
+          if (data.success) {
+            toast({
+              type: enabled ? 'success' : 'warning',
+              title: `${flag?.name ?? 'Flag'} ${enabled ? 'enabled' : 'disabled'}`,
+              description: enabled
+                ? 'Flag is now active globally.'
+                : 'Flag has been disabled for all tenants.',
+            });
+          } else {
+            toast({ type: 'error', title: 'Toggle failed', description: data.error ?? 'Unknown error' });
+          }
+        })
+        .catch(() => {
+          toast({ type: 'error', title: 'Toggle failed', description: 'Network error' });
+        });
     },
     [flags, toast],
   );
 
   const handleToggleTenant = useCallback(
     (flagId: string, tenantSlug: string, enabled: boolean) => {
-      setFlags((prev) =>
-        prev.map((f) =>
-          f.id === flagId
-            ? {
-                ...f,
-                tenantOverrides: { ...f.tenantOverrides, [tenantSlug]: enabled },
-              }
-            : f
-        )
-      );
-      toast({
-        type: 'info',
-        title: 'Tenant override updated',
-        description: `${getTenantLabel(tenantSlug)} override set to ${enabled ? 'enabled' : 'disabled'}.`,
-      });
+      const flag = flags.find((f) => f.id === flagId);
+      const updatedOverrides = { ...(flag?.tenantOverrides ?? {}), [tenantSlug]: enabled };
+
+      fetch(`/api/admin/feature-flags/${flagId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenantOverrides: updatedOverrides }),
+      })
+        .then((res) => res.json())
+        .then((data: { success?: boolean; error?: string }) => {
+          if (data.success) {
+            toast({
+              type: 'info',
+              title: 'Tenant override updated',
+              description: `${getTenantLabel(tenantSlug)} override set to ${enabled ? 'enabled' : 'disabled'}.`,
+            });
+          } else {
+            toast({ type: 'error', title: 'Override failed', description: data.error ?? 'Unknown error' });
+          }
+        })
+        .catch(() => {
+          toast({ type: 'error', title: 'Override failed', description: 'Network error' });
+        });
     },
-    [toast],
+    [flags, toast],
   );
 
   const handleUpdateRollout = useCallback(
     (flagId: string, percentage: number) => {
-      setFlags((prev) =>
-        prev.map((f) => (f.id === flagId ? { ...f, rolloutPercentage: percentage } : f))
-      );
+      fetch(`/api/admin/feature-flags/${flagId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rolloutPercentage: percentage }),
+      }).catch(() => {
+        toast({ type: 'error', title: 'Rollout update failed', description: 'Network error' });
+      });
     },
-    [],
+    [toast],
   );
 
   // ── Filter by search ─────────────────────────────────────────────
@@ -424,13 +369,29 @@ export default function FeatureFlagsPage() {
         <Button
           variant="primary"
           size="md"
-          onClick={() =>
-            toast({
-              type: 'info',
-              title: 'Create Flag coming soon',
-              description: 'Flag creation will be available when the Firestore schema is finalized.',
+          onClick={() => {
+            const key = window.prompt('Flag key (e.g. new_feature):');
+            if (!key) return;
+            const description = window.prompt('Flag description:') ?? '';
+            const id = key.replace(/\s+/g, '_').toLowerCase();
+
+            fetch('/api/admin/feature-flags', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id, name: key, enabled: false, description }),
             })
-          }
+              .then((res) => res.json())
+              .then((data: { success?: boolean; error?: string }) => {
+                if (data.success) {
+                  toast({ type: 'success', title: 'Flag created', description: `${key} has been added.` });
+                } else {
+                  toast({ type: 'error', title: 'Create failed', description: data.error ?? 'Unknown error' });
+                }
+              })
+              .catch(() => {
+                toast({ type: 'error', title: 'Create failed', description: 'Network error' });
+              });
+          }}
         >
           <Plus className="h-4 w-4" />
           Create Flag
@@ -463,14 +424,33 @@ export default function FeatureFlagsPage() {
         />
       </div>
 
+      {/* Loading state */}
+      {loading && (
+        <div className="grid grid-cols-1 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} variant="card" className="h-48" />
+          ))}
+        </div>
+      )}
+
+      {/* Error state */}
+      {error && !loading && (
+        <div className="flex items-center gap-3 rounded-rally-lg border border-status-error/30 bg-status-error/10 px-4 py-3">
+          <AlertTriangle className="h-5 w-5 text-status-error shrink-0" />
+          <p className="text-sm text-status-error">
+            Failed to load feature flags: {error.message}
+          </p>
+        </div>
+      )}
+
       {/* Flag Cards */}
-      {filteredFlags.length === 0 ? (
+      {!loading && filteredFlags.length === 0 ? (
         <EmptyState
           icon={ToggleLeft}
           title="No feature flags found"
           description="No flags match the current search criteria."
         />
-      ) : (
+      ) : !loading ? (
         <div className="grid grid-cols-1 gap-4">
           {filteredFlags.map((flag) => (
             <FlagCard
@@ -482,7 +462,7 @@ export default function FeatureFlagsPage() {
             />
           ))}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

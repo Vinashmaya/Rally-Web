@@ -17,7 +17,15 @@ import {
   type FilterOption,
 } from '@rally/ui';
 import { useAuthStore, useTenantStore } from '@rally/services';
-import { useVehicleLists, AVAILABLE_COLORS, type VehicleList } from '@rally/firebase';
+import { useToast } from '@rally/ui';
+import {
+  useVehicleLists,
+  AVAILABLE_COLORS,
+  type VehicleList,
+  createVehicleList,
+  updateVehicleList,
+  deleteVehicleList,
+} from '@rally/firebase';
 
 // ---------------------------------------------------------------------------
 // Color palette
@@ -78,18 +86,42 @@ function ListsSkeleton() {
 
 interface CreateListFormProps {
   onClose: () => void;
+  dealershipId: string;
+  ownerId: string;
+  ownerName: string;
 }
 
-function CreateListForm({ onClose }: CreateListFormProps) {
+function CreateListForm({ onClose, dealershipId, ownerId, ownerName }: CreateListFormProps) {
   const [name, setName] = useState('');
   const [selectedColor, setSelectedColor] = useState('blue');
+  const [submitting, setSubmitting] = useState(false);
+  const { toast } = useToast();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
-    // TODO: Wire up Firestore write via @rally/firebase service
-    // For now, close the form
-    onClose();
+    if (!name.trim() || submitting) return;
+
+    setSubmitting(true);
+    try {
+      await createVehicleList({
+        name: name.trim(),
+        color: selectedColor,
+        icon: 'list.bullet',
+        dealershipId,
+        ownerId,
+        ownerName,
+      });
+      toast({ type: 'success', title: 'List created', description: `"${name.trim()}" is ready.` });
+      onClose();
+    } catch (err) {
+      toast({
+        type: 'error',
+        title: 'Failed to create list',
+        description: err instanceof Error ? err.message : 'Unknown error',
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -147,7 +179,8 @@ function CreateListForm({ onClose }: CreateListFormProps) {
               type="submit"
               variant="primary"
               size="sm"
-              disabled={!name.trim()}
+              disabled={!name.trim() || submitting}
+              loading={submitting}
             >
               Create List
             </Button>
@@ -174,6 +207,7 @@ export default function ListsPage() {
   const router = useRouter();
   const activeStore = useTenantStore((s) => s.activeStore);
   const firebaseUser = useAuthStore((s) => s.firebaseUser);
+  const dealerUser = useAuthStore((s) => s.dealerUser);
   const [filter, setFilter] = useState('mine');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [expandedListId, setExpandedListId] = useState<string | null>(null);
@@ -248,7 +282,12 @@ export default function ListsPage() {
 
       {/* Create form */}
       {showCreateForm && (
-        <CreateListForm onClose={() => setShowCreateForm(false)} />
+        <CreateListForm
+          onClose={() => setShowCreateForm(false)}
+          dealershipId={dealershipId}
+          ownerId={userId}
+          ownerName={dealerUser?.displayName ?? 'User'}
+        />
       )}
 
       {/* Filter tabs */}
@@ -310,7 +349,11 @@ export default function ListsPage() {
                 onEdit={
                   list.ownerId === userId
                     ? () => {
-                        // TODO: Open edit modal
+                        // Inline rename via prompt for now
+                        const newName = window.prompt('Rename list:', list.name);
+                        if (newName && newName.trim() && list.id) {
+                          updateVehicleList(list.id, { name: newName.trim() });
+                        }
                       }
                     : undefined
                 }

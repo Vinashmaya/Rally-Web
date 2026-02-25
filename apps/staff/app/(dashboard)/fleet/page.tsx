@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo } from 'react';
 import {
   MapPin,
   RefreshCw,
@@ -10,6 +10,7 @@ import {
   Clock,
   Wifi,
   WifiOff,
+  AlertCircle,
 } from 'lucide-react';
 import {
   Card,
@@ -20,80 +21,65 @@ import {
   Skeleton,
 } from '@rally/ui';
 import { useToast } from '@rally/ui';
+import { useFleetVehicles } from '@rally/firebase';
+import { useTenantStore } from '@rally/services';
+import type { FleetVehicle, FleetVehicleStatus } from '@rally/firebase';
 
 // ---------------------------------------------------------------------------
-// Types
+// Helpers
 // ---------------------------------------------------------------------------
 
-type VehicleTrackingStatus = 'moving' | 'parked' | 'offline';
+/** Convert a Date to a human-readable relative time string */
+function relativeTime(date: Date): string {
+  const now = Date.now();
+  const diffMs = now - date.getTime();
+  const diffSec = Math.floor(diffMs / 1000);
 
-interface TrackedVehicle {
-  stockNumber: string;
-  year: number;
-  make: string;
-  model: string;
-  location: string;
-  batteryPercent: number;
-  lastPing: string;
-  status: VehicleTrackingStatus;
+  if (diffSec < 60) return 'just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} min ago`;
+  const diffHrs = Math.floor(diffMin / 60);
+  if (diffHrs < 24) return `${diffHrs} hr${diffHrs > 1 ? 's' : ''} ago`;
+  const diffDays = Math.floor(diffHrs / 24);
+  return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+}
+
+/** Convert optional batteryPercentage to a display value (0-100) */
+function displayBatteryPercent(vehicle: FleetVehicle): number {
+  return vehicle.batteryPercentage ?? 0;
+}
+
+/** Build a location label from lat/lng or fallback */
+function locationLabel(vehicle: FleetVehicle): string {
+  if (vehicle.latitude === 0 && vehicle.longitude === 0) return 'Unknown';
+  return `${vehicle.latitude.toFixed(4)}, ${vehicle.longitude.toFixed(4)}`;
 }
 
 // ---------------------------------------------------------------------------
-// Mock data
+// Display type — maps FleetVehicle to what the cards need
 // ---------------------------------------------------------------------------
 
-const MOCK_VEHICLES: TrackedVehicle[] = [
-  {
-    stockNumber: 'R1234',
-    year: 2024,
-    make: 'Jeep',
-    model: 'Wrangler',
-    location: 'Main Lot, Row C',
-    batteryPercent: 92,
-    lastPing: '2 min ago',
-    status: 'moving',
-  },
-  {
-    stockNumber: 'R2345',
-    year: 2023,
-    make: 'Ram',
-    model: '1500',
-    location: 'Service Bay 3',
-    batteryPercent: 85,
-    lastPing: '5 min ago',
-    status: 'parked',
-  },
-  {
-    stockNumber: 'R3456',
-    year: 2024,
-    make: 'Dodge',
-    model: 'Charger',
-    location: 'Test Drive Route',
-    batteryPercent: 78,
-    lastPing: '1 min ago',
-    status: 'moving',
-  },
-  {
-    stockNumber: 'R4567',
-    year: 2023,
-    make: 'Chrysler',
-    model: '300',
-    location: 'Off-site',
-    batteryPercent: 15,
-    lastPing: '3 hrs ago',
-    status: 'parked',
-  },
-  {
-    stockNumber: 'R5678',
-    year: 2024,
-    make: 'Jeep',
-    model: 'Grand Cherokee',
-    location: 'Unknown',
-    batteryPercent: 0,
-    lastPing: 'Never',
-    status: 'offline',
-  },
-] as const;
+interface TrackedVehicleDisplay {
+  id: string;
+  stockNumber: string;
+  label: string;
+  location: string;
+  batteryPercent: number;
+  lastPing: string;
+  status: FleetVehicleStatus;
+}
+
+function mapFleetVehicle(v: FleetVehicle): TrackedVehicleDisplay {
+  return {
+    id: v.id,
+    stockNumber: v.stockNumber,
+    label: `${v.year} ${v.make} ${v.model}`,
+    location: locationLabel(v),
+    batteryPercent: displayBatteryPercent(v),
+    lastPing: relativeTime(v.lastUpdate),
+    status: v.status,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Status config
@@ -147,7 +133,7 @@ function FleetStat({ label, value, icon: Icon, color }: FleetStatProps) {
 // ---------------------------------------------------------------------------
 
 interface VehicleTrackingCardProps {
-  vehicle: TrackedVehicle;
+  vehicle: TrackedVehicleDisplay;
 }
 
 function VehicleTrackingCard({ vehicle }: VehicleTrackingCardProps) {
@@ -190,7 +176,7 @@ function VehicleTrackingCard({ vehicle }: VehicleTrackingCardProps) {
           </Badge>
         </div>
         <p className="text-sm text-[var(--text-primary)] mt-0.5">
-          {vehicle.year} {vehicle.make} {vehicle.model}
+          {vehicle.label}
         </p>
         <div className="flex items-center gap-1 mt-1">
           <MapPin className="h-3 w-3 text-[var(--text-tertiary)]" />
@@ -238,29 +224,64 @@ function FleetSkeleton() {
 }
 
 // ---------------------------------------------------------------------------
+// Error state
+// ---------------------------------------------------------------------------
+
+function FleetError({ message }: { message: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 py-24">
+      <div className="rounded-full bg-[var(--status-error)]/15 p-4">
+        <AlertCircle className="h-8 w-8 text-[var(--status-error)]" strokeWidth={1.5} />
+      </div>
+      <p className="text-sm font-medium text-[var(--text-primary)]">Failed to load fleet data</p>
+      <p className="text-xs text-[var(--text-tertiary)] max-w-xs text-center">{message}</p>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
 export default function FleetPage() {
   const { toast } = useToast();
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const dealershipId = useTenantStore((s) => s.activeStore?.id ?? '');
 
-  const movingCount = MOCK_VEHICLES.filter((v) => v.status === 'moving').length;
-  const parkedCount = MOCK_VEHICLES.filter((v) => v.status === 'parked').length;
-  const offlineCount = MOCK_VEHICLES.filter((v) => v.status === 'offline').length;
+  const { fleetVehicles, loading, error } = useFleetVehicles({ dealershipId });
+
+  // Map FleetVehicle[] to display type
+  const displayVehicles = useMemo(
+    () => fleetVehicles.map(mapFleetVehicle),
+    [fleetVehicles],
+  );
+
+  const movingCount = useMemo(
+    () => fleetVehicles.filter((v) => v.status === 'moving').length,
+    [fleetVehicles],
+  );
+  const parkedCount = useMemo(
+    () => fleetVehicles.filter((v) => v.status === 'parked').length,
+    [fleetVehicles],
+  );
+  const offlineCount = useMemo(
+    () => fleetVehicles.filter((v) => v.status === 'offline').length,
+    [fleetVehicles],
+  );
 
   const handleRefresh = () => {
-    setIsRefreshing(true);
-    // TODO: Refresh real GPS data from Ghost/Kahu trackers
-    setTimeout(() => {
-      setIsRefreshing(false);
-      toast({
-        type: 'info',
-        title: 'Fleet data refreshed',
-        description: 'All tracker positions updated.',
-      });
-    }, 1500);
+    // Data is real-time via Firestore snapshot listener — no manual refresh needed
+    toast({
+      type: 'info',
+      title: 'Fleet data is live',
+      description: 'Tracker positions update automatically via real-time sync.',
+    });
   };
+
+  // Loading state
+  if (loading) return <FleetSkeleton />;
+
+  // Error state
+  if (error) return <FleetError message={error.message} />;
 
   return (
     <div className="flex flex-col gap-6">
@@ -269,14 +290,13 @@ export default function FleetPage() {
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold text-[var(--text-primary)]">Fleet Tracker</h1>
           <Badge variant="gold" size="sm">
-            {MOCK_VEHICLES.length} tracked
+            {fleetVehicles.length} tracked
           </Badge>
         </div>
         <Button
           variant="secondary"
           size="sm"
           onClick={handleRefresh}
-          loading={isRefreshing}
         >
           <RefreshCw className="h-4 w-4" />
           Refresh
@@ -287,7 +307,7 @@ export default function FleetPage() {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <FleetStat
           label="Total Tracked"
-          value={MOCK_VEHICLES.length}
+          value={fleetVehicles.length}
           icon={Radio}
           color="bg-[var(--rally-gold-muted)] text-[var(--rally-gold)]"
         />
@@ -363,9 +383,15 @@ export default function FleetPage() {
           </CardHeader>
           <CardContent>
             <div className="flex flex-col gap-2">
-              {MOCK_VEHICLES.map((vehicle) => (
-                <VehicleTrackingCard key={vehicle.stockNumber} vehicle={vehicle} />
-              ))}
+              {displayVehicles.length > 0 ? (
+                displayVehicles.map((vehicle) => (
+                  <VehicleTrackingCard key={vehicle.id} vehicle={vehicle} />
+                ))
+              ) : (
+                <p className="text-sm text-[var(--text-tertiary)] text-center py-8">
+                  No tracked vehicles found for this dealership.
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>

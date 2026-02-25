@@ -1,17 +1,22 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import {
   Badge,
+  Card,
+  CardContent,
   Input,
   Avatar,
   EmptyState,
   FilterBar,
   DataTable,
   RelativeTime,
+  useToast,
 } from '@rally/ui';
 import type { FilterOption } from '@rally/ui';
 import type { ColumnDef } from '@tanstack/react-table';
+import { useAllUsers } from '@rally/firebase';
+import type { StoreMembership } from '@rally/firebase';
 import {
   Users,
   Search,
@@ -20,6 +25,8 @@ import {
   UserCog,
   Ban,
   ShieldCheck,
+  AlertCircle,
+  CheckCircle2,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -34,7 +41,18 @@ type UserRole =
   | 'salesperson'
   | 'porter'
   | 'detailer'
-  | 'serviceManager';
+  | 'serviceManager'
+  // Firestore roles (snake_case from iOS)
+  | 'owner'
+  | 'general_manager'
+  | 'sales_manager'
+  | 'service_manager'
+  | 'finance_manager'
+  | 'desk_manager'
+  | 'bdc_agent'
+  | 'service_advisor'
+  | 'technician'
+  | 'parts';
 
 interface SystemUser {
   id: string;
@@ -55,7 +73,7 @@ interface SystemUser {
 // Constants
 // ---------------------------------------------------------------------------
 
-const USER_ROLE_DISPLAY: Record<UserRole, string> = {
+const USER_ROLE_DISPLAY: Record<string, string> = {
   superAdmin: 'Super Admin',
   principal: 'Principal',
   generalManager: 'General Manager',
@@ -64,9 +82,19 @@ const USER_ROLE_DISPLAY: Record<UserRole, string> = {
   porter: 'Porter',
   detailer: 'Detailer',
   serviceManager: 'Service Manager',
+  owner: 'Owner',
+  general_manager: 'General Manager',
+  sales_manager: 'Sales Manager',
+  service_manager: 'Service Manager',
+  finance_manager: 'Finance Manager',
+  desk_manager: 'Desk Manager',
+  bdc_agent: 'BDC Agent',
+  service_advisor: 'Service Advisor',
+  technician: 'Technician',
+  parts: 'Parts',
 } as const;
 
-const ROLE_BADGE_VARIANT: Record<UserRole, 'gold' | 'info' | 'success' | 'warning' | 'default'> = {
+const ROLE_BADGE_VARIANT: Record<string, 'gold' | 'info' | 'success' | 'warning' | 'default'> = {
   superAdmin: 'gold',
   principal: 'info',
   generalManager: 'info',
@@ -75,56 +103,39 @@ const ROLE_BADGE_VARIANT: Record<UserRole, 'gold' | 'info' | 'success' | 'warnin
   porter: 'default',
   detailer: 'default',
   serviceManager: 'success',
+  owner: 'gold',
+  general_manager: 'info',
+  sales_manager: 'info',
+  service_manager: 'success',
+  finance_manager: 'info',
+  desk_manager: 'info',
+  bdc_agent: 'default',
+  service_advisor: 'default',
+  technician: 'default',
+  parts: 'default',
 } as const;
 
 const STATUS_BADGE_VARIANT: Record<string, 'success' | 'error' | 'warning' | 'default'> = {
   active: 'success',
   disabled: 'error',
   pending: 'warning',
+  suspended: 'error',
 } as const;
 
 const ROLE_FILTER_OPTIONS: FilterOption[] = [
   { value: 'all', label: 'All Roles' },
-  { value: 'superAdmin', label: 'Super Admin' },
-  { value: 'principal', label: 'Principal' },
-  { value: 'generalManager', label: 'General Manager' },
-  { value: 'salesManager', label: 'Sales Manager' },
+  { value: 'owner', label: 'Owner' },
+  { value: 'general_manager', label: 'General Manager' },
+  { value: 'sales_manager', label: 'Sales Manager' },
+  { value: 'service_manager', label: 'Service Manager' },
+  { value: 'finance_manager', label: 'Finance Manager' },
+  { value: 'desk_manager', label: 'Desk Manager' },
   { value: 'salesperson', label: 'Salesperson' },
+  { value: 'bdc_agent', label: 'BDC Agent' },
   { value: 'porter', label: 'Porter' },
   { value: 'detailer', label: 'Detailer' },
-  { value: 'serviceManager', label: 'Service Manager' },
-] as const;
-
-// ---------------------------------------------------------------------------
-// Mock Data — 18 users across 4 tenants
-// ---------------------------------------------------------------------------
-
-const MOCK_USERS: SystemUser[] = [
-  // Gallatin CDJR
-  { id: 'u-001', displayName: 'Trey Adcox', email: 'trey@gallatincdjr.com', role: 'superAdmin', dealershipId: 'gallatin-cdjr', status: 'active', tenantName: 'Gallatin CDJR', tenantSlug: 'gallatin-cdjr', createdAt: new Date('2025-08-15'), lastActiveAt: new Date(Date.now() - 1000 * 60 * 5), phone: '(615) 555-0101' },
-  { id: 'u-002', displayName: 'Robert Lisowski', email: 'robert@gallatincdjr.com', role: 'generalManager', dealershipId: 'gallatin-cdjr', status: 'active', tenantName: 'Gallatin CDJR', tenantSlug: 'gallatin-cdjr', createdAt: new Date('2025-09-01'), lastActiveAt: new Date(Date.now() - 1000 * 60 * 45), phone: '(615) 555-0102' },
-  { id: 'u-003', displayName: 'Marcus Williams', email: 'marcus@gallatincdjr.com', role: 'salesManager', dealershipId: 'gallatin-cdjr', status: 'active', tenantName: 'Gallatin CDJR', tenantSlug: 'gallatin-cdjr', createdAt: new Date('2025-09-15'), lastActiveAt: new Date(Date.now() - 1000 * 60 * 60 * 2) },
-  { id: 'u-004', displayName: 'Jessica Turner', email: 'jessica@gallatincdjr.com', role: 'salesperson', dealershipId: 'gallatin-cdjr', status: 'active', tenantName: 'Gallatin CDJR', tenantSlug: 'gallatin-cdjr', createdAt: new Date('2025-10-01'), lastActiveAt: new Date(Date.now() - 1000 * 60 * 60 * 8) },
-  { id: 'u-005', displayName: 'Derek Coleman', email: 'derek@gallatincdjr.com', role: 'porter', dealershipId: 'gallatin-cdjr', status: 'active', tenantName: 'Gallatin CDJR', tenantSlug: 'gallatin-cdjr', createdAt: new Date('2025-11-01'), lastActiveAt: new Date(Date.now() - 1000 * 60 * 60 * 3) },
-
-  // Music City Toyota
-  { id: 'u-006', displayName: 'Sarah Mitchell', email: 'sarah@musiccitytoyota.com', role: 'principal', dealershipId: 'music-city-toyota', status: 'active', tenantName: 'Music City Toyota', tenantSlug: 'music-city-toyota', createdAt: new Date('2025-07-01'), lastActiveAt: new Date(Date.now() - 1000 * 60 * 15) },
-  { id: 'u-007', displayName: 'James Patel', email: 'james@musiccitytoyota.com', role: 'generalManager', dealershipId: 'music-city-toyota', status: 'active', tenantName: 'Music City Toyota', tenantSlug: 'music-city-toyota', createdAt: new Date('2025-08-01'), lastActiveAt: new Date(Date.now() - 1000 * 60 * 60 * 1) },
-  { id: 'u-008', displayName: 'Angela Rivera', email: 'angela@musiccitytoyota.com', role: 'salesManager', dealershipId: 'music-city-toyota', status: 'active', tenantName: 'Music City Toyota', tenantSlug: 'music-city-toyota', createdAt: new Date('2025-09-01'), lastActiveAt: new Date(Date.now() - 1000 * 60 * 60 * 4) },
-  { id: 'u-009', displayName: 'Tyler Brooks', email: 'tyler@musiccitytoyota.com', role: 'salesperson', dealershipId: 'music-city-toyota', status: 'active', tenantName: 'Music City Toyota', tenantSlug: 'music-city-toyota', createdAt: new Date('2025-10-15'), lastActiveAt: new Date(Date.now() - 1000 * 60 * 60 * 12) },
-  { id: 'u-010', displayName: 'Kayla Henderson', email: 'kayla@musiccitytoyota.com', role: 'detailer', dealershipId: 'music-city-toyota', status: 'disabled', tenantName: 'Music City Toyota', tenantSlug: 'music-city-toyota', createdAt: new Date('2025-11-15') },
-
-  // Franklin Chevrolet
-  { id: 'u-011', displayName: 'David Chen', email: 'david@franklinchevrolet.com', role: 'principal', dealershipId: 'franklin-chevrolet', status: 'active', tenantName: 'Franklin Chevrolet', tenantSlug: 'franklin-chevrolet', createdAt: new Date('2025-06-15'), lastActiveAt: new Date(Date.now() - 1000 * 60 * 30) },
-  { id: 'u-012', displayName: 'Megan Foster', email: 'megan@franklinchevrolet.com', role: 'generalManager', dealershipId: 'franklin-chevrolet', status: 'active', tenantName: 'Franklin Chevrolet', tenantSlug: 'franklin-chevrolet', createdAt: new Date('2025-07-15'), lastActiveAt: new Date(Date.now() - 1000 * 60 * 60 * 6) },
-  { id: 'u-013', displayName: 'Nathan Park', email: 'nathan@franklinchevrolet.com', role: 'serviceManager', dealershipId: 'franklin-chevrolet', status: 'active', tenantName: 'Franklin Chevrolet', tenantSlug: 'franklin-chevrolet', createdAt: new Date('2025-08-01'), lastActiveAt: new Date(Date.now() - 1000 * 60 * 60 * 2) },
-  { id: 'u-014', displayName: 'Rachel Adams', email: 'rachel@franklinchevrolet.com', role: 'salesperson', dealershipId: 'franklin-chevrolet', status: 'pending', tenantName: 'Franklin Chevrolet', tenantSlug: 'franklin-chevrolet', createdAt: new Date('2026-02-20') },
-
-  // Hendersonville Ford
-  { id: 'u-015', displayName: 'Brian Wallace', email: 'brian@hendersonvilleford.com', role: 'principal', dealershipId: 'hendersonville-ford', status: 'active', tenantName: 'Hendersonville Ford', tenantSlug: 'hendersonville-ford', createdAt: new Date('2025-05-01'), lastActiveAt: new Date(Date.now() - 1000 * 60 * 60 * 1) },
-  { id: 'u-016', displayName: 'Amanda Cruz', email: 'amanda@hendersonvilleford.com', role: 'salesManager', dealershipId: 'hendersonville-ford', status: 'active', tenantName: 'Hendersonville Ford', tenantSlug: 'hendersonville-ford', createdAt: new Date('2025-06-01'), lastActiveAt: new Date(Date.now() - 1000 * 60 * 60 * 3) },
-  { id: 'u-017', displayName: 'Chris Nguyen', email: 'chris@hendersonvilleford.com', role: 'salesperson', dealershipId: 'hendersonville-ford', status: 'active', tenantName: 'Hendersonville Ford', tenantSlug: 'hendersonville-ford', createdAt: new Date('2025-09-01'), lastActiveAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2) },
-  { id: 'u-018', displayName: 'Olivia Grant', email: 'olivia@hendersonvilleford.com', role: 'porter', dealershipId: 'hendersonville-ford', status: 'active', tenantName: 'Hendersonville Ford', tenantSlug: 'hendersonville-ford', createdAt: new Date('2025-12-01'), lastActiveAt: new Date(Date.now() - 1000 * 60 * 60 * 5) },
+  { value: 'technician', label: 'Technician' },
+  { value: 'parts', label: 'Parts' },
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -139,10 +150,38 @@ const TENANT_COLORS: Record<string, string> = {
 } as const;
 
 // ---------------------------------------------------------------------------
+// Helper: map StoreMembership → SystemUser
+// ---------------------------------------------------------------------------
+
+function mapMembershipToSystemUser(membership: StoreMembership): SystemUser {
+  const memberStatus = membership.status === 'suspended' ? 'disabled' as const : 'active' as const;
+
+  return {
+    id: membership.employeeUid,
+    email: `${membership.employeeUid}@rally.vin`,
+    displayName: membership.employeeUid,
+    role: membership.role as UserRole,
+    dealershipId: membership.storeId,
+    status: memberStatus,
+    createdAt: membership.joinedAt instanceof Date ? membership.joinedAt : new Date(membership.joinedAt),
+    tenantName: membership.groupId,
+    tenantSlug: membership.groupId,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Action Dropdown
 // ---------------------------------------------------------------------------
 
-function ActionMenu({ user, onClose }: { user: SystemUser; onClose: () => void }) {
+function ActionMenu({
+  user,
+  onClose,
+  onAction,
+}: {
+  user: SystemUser;
+  onClose: () => void;
+  onAction: (uid: string, action: 'view' | 'impersonate' | 'disable' | 'enable') => void;
+}) {
   return (
     <div
       className="absolute right-0 top-full mt-1 z-50 w-44 rounded-[var(--radius-rally-lg)] bg-[var(--surface-overlay)] border border-[var(--surface-border)] shadow-xl py-1"
@@ -152,7 +191,7 @@ function ActionMenu({ user, onClose }: { user: SystemUser; onClose: () => void }
         type="button"
         className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-border)] hover:text-[var(--text-primary)] transition-colors"
         onClick={() => {
-          // TODO: Navigate to user detail
+          onAction(user.id, 'view');
           onClose();
         }}
       >
@@ -163,7 +202,7 @@ function ActionMenu({ user, onClose }: { user: SystemUser; onClose: () => void }
         type="button"
         className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--rally-gold)] hover:bg-[var(--surface-border)] transition-colors"
         onClick={() => {
-          // TODO: Impersonate user
+          onAction(user.id, 'impersonate');
           onClose();
         }}
       >
@@ -175,11 +214,15 @@ function ActionMenu({ user, onClose }: { user: SystemUser; onClose: () => void }
         type="button"
         className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--status-error)] hover:bg-[var(--surface-border)] transition-colors"
         onClick={() => {
-          // TODO: Disable user
+          onAction(user.id, user.status === 'disabled' ? 'enable' : 'disable');
           onClose();
         }}
       >
-        <Ban className="h-3.5 w-3.5" />
+        {user.status === 'disabled' ? (
+          <CheckCircle2 className="h-3.5 w-3.5" />
+        ) : (
+          <Ban className="h-3.5 w-3.5" />
+        )}
         {user.status === 'disabled' ? 'Enable' : 'Disable'}
       </button>
     </div>
@@ -190,7 +233,13 @@ function ActionMenu({ user, onClose }: { user: SystemUser; onClose: () => void }
 // Action Cell
 // ---------------------------------------------------------------------------
 
-function ActionCell({ user }: { user: SystemUser }) {
+function ActionCell({
+  user,
+  onAction,
+}: {
+  user: SystemUser;
+  onAction: (uid: string, action: 'view' | 'impersonate' | 'disable' | 'enable') => void;
+}) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -205,108 +254,167 @@ function ActionCell({ user }: { user: SystemUser }) {
       >
         <MoreHorizontal className="h-4 w-4" />
       </button>
-      {open && <ActionMenu user={user} onClose={() => setOpen(false)} />}
+      {open && (
+        <ActionMenu
+          user={user}
+          onClose={() => setOpen(false)}
+          onAction={onAction}
+        />
+      )}
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Column Definitions
-// ---------------------------------------------------------------------------
-
-const columns: ColumnDef<SystemUser, unknown>[] = [
-  {
-    accessorKey: 'displayName',
-    header: 'Name',
-    cell: ({ row }) => {
-      const user = row.original;
-      return (
-        <div className="flex items-center gap-3">
-          <Avatar name={user.displayName} src={user.photoURL} size="sm" />
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-[var(--text-primary)] truncate">
-              {user.displayName}
-            </p>
-            <p className="text-xs text-[var(--text-tertiary)] truncate">
-              {user.email}
-            </p>
-          </div>
-        </div>
-      );
-    },
-  },
-  {
-    accessorKey: 'role',
-    header: 'Role',
-    cell: ({ row }) => {
-      const role = row.original.role;
-      return (
-        <Badge variant={ROLE_BADGE_VARIANT[role] ?? 'default'} size="sm">
-          {USER_ROLE_DISPLAY[role] ?? role}
-        </Badge>
-      );
-    },
-  },
-  {
-    accessorKey: 'tenantName',
-    header: 'Tenant',
-    cell: ({ row }) => {
-      const { tenantSlug, tenantName } = row.original;
-      const colorClass = TENANT_COLORS[tenantSlug] ?? 'bg-surface-overlay text-text-secondary border-surface-border';
-      return (
-        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border ${colorClass}`}>
-          {tenantName}
-        </span>
-      );
-    },
-  },
-  {
-    accessorKey: 'status',
-    header: 'Status',
-    cell: ({ row }) => {
-      const status = row.original.status;
-      return (
-        <Badge variant={STATUS_BADGE_VARIANT[status] ?? 'default'} size="sm">
-          {status.charAt(0).toUpperCase() + status.slice(1)}
-        </Badge>
-      );
-    },
-  },
-  {
-    accessorKey: 'lastActiveAt',
-    header: 'Last Active',
-    cell: ({ row }) => {
-      const lastActive = row.original.lastActiveAt;
-      if (!lastActive) {
-        return <span className="text-xs text-[var(--text-disabled)]">Never</span>;
-      }
-      return <RelativeTime date={lastActive} />;
-    },
-    sortingFn: (rowA, rowB) => {
-      const a = rowA.original.lastActiveAt?.getTime() ?? 0;
-      const b = rowB.original.lastActiveAt?.getTime() ?? 0;
-      return a - b;
-    },
-  },
-  {
-    id: 'actions',
-    header: '',
-    cell: ({ row }) => <ActionCell user={row.original} />,
-    enableSorting: false,
-  },
-];
 
 // ---------------------------------------------------------------------------
 // Page Component
 // ---------------------------------------------------------------------------
 
 export default function SystemUsersPage() {
+  const { toast } = useToast();
   const [roleFilter, setRoleFilter] = useState('all');
   const [search, setSearch] = useState('');
-  const [loading, setLoading] = useState(false);
 
-  // TODO: Replace with real Firestore collectionGroup query across all tenants
-  const users = MOCK_USERS as unknown as SystemUser[];
+  // Real Firestore data via useAllUsers hook
+  const { allUsers: rawUsers, loading, error } = useAllUsers({});
+
+  // Map StoreMembership[] → SystemUser[]
+  const users: SystemUser[] = useMemo(
+    () => rawUsers.map(mapMembershipToSystemUser),
+    [rawUsers],
+  );
+
+  // User action handler
+  const handleUserAction = useCallback(
+    async (uid: string, action: 'view' | 'impersonate' | 'disable' | 'enable') => {
+      if (action === 'view') {
+        toast({
+          type: 'info',
+          title: 'User Profile',
+          description: `Viewing profile for user ${uid}`,
+        });
+        return;
+      }
+
+      if (action === 'impersonate') {
+        toast({
+          type: 'info',
+          title: 'Impersonation',
+          description: 'Impersonation coming soon',
+        });
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/admin/users/${uid}/${action}`, {
+          method: 'POST',
+        });
+
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({ message: 'Unknown error' })) as { message?: string };
+          throw new Error(body.message ?? `Failed to ${action} user`);
+        }
+
+        toast({
+          type: 'success',
+          title: `User ${action}d`,
+          description: `Successfully ${action}d the user.`,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'An unexpected error occurred';
+        toast({
+          type: 'error',
+          title: `Failed to ${action} user`,
+          description: message,
+        });
+      }
+    },
+    [toast],
+  );
+
+  // Column definitions (inside component to access handleUserAction)
+  const columns: ColumnDef<SystemUser, unknown>[] = useMemo(() => [
+    {
+      accessorKey: 'displayName',
+      header: 'Name',
+      cell: ({ row }) => {
+        const user = row.original;
+        return (
+          <div className="flex items-center gap-3">
+            <Avatar name={user.displayName} src={user.photoURL} size="sm" />
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-[var(--text-primary)] truncate">
+                {user.displayName}
+              </p>
+              <p className="text-xs text-[var(--text-tertiary)] truncate">
+                {user.email}
+              </p>
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: 'role',
+      header: 'Role',
+      cell: ({ row }) => {
+        const role = row.original.role;
+        return (
+          <Badge variant={ROLE_BADGE_VARIANT[role] ?? 'default'} size="sm">
+            {USER_ROLE_DISPLAY[role] ?? role}
+          </Badge>
+        );
+      },
+    },
+    {
+      accessorKey: 'tenantName',
+      header: 'Tenant',
+      cell: ({ row }) => {
+        const { tenantSlug, tenantName } = row.original;
+        const colorClass = TENANT_COLORS[tenantSlug] ?? 'bg-surface-overlay text-text-secondary border-surface-border';
+        return (
+          <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border ${colorClass}`}>
+            {tenantName}
+          </span>
+        );
+      },
+    },
+    {
+      accessorKey: 'status',
+      header: 'Status',
+      cell: ({ row }) => {
+        const status = row.original.status;
+        return (
+          <Badge variant={STATUS_BADGE_VARIANT[status] ?? 'default'} size="sm">
+            {status.charAt(0).toUpperCase() + status.slice(1)}
+          </Badge>
+        );
+      },
+    },
+    {
+      accessorKey: 'lastActiveAt',
+      header: 'Last Active',
+      cell: ({ row }) => {
+        const lastActive = row.original.lastActiveAt;
+        if (!lastActive) {
+          return <span className="text-xs text-[var(--text-disabled)]">Never</span>;
+        }
+        return <RelativeTime date={lastActive} />;
+      },
+      sortingFn: (rowA, rowB) => {
+        const a = rowA.original.lastActiveAt?.getTime() ?? 0;
+        const b = rowB.original.lastActiveAt?.getTime() ?? 0;
+        return a - b;
+      },
+    },
+    {
+      id: 'actions',
+      header: '',
+      cell: ({ row }) => (
+        <ActionCell user={row.original} onAction={handleUserAction} />
+      ),
+      enableSorting: false,
+    },
+  ], [handleUserAction]);
 
   // Compute filter counts
   const filterOptionsWithCounts: FilterOption[] = useMemo(() => {
@@ -340,6 +448,23 @@ export default function SystemUsersPage() {
 
     return result;
   }, [users, roleFilter, search]);
+
+  // Error state
+  if (error) {
+    return (
+      <div className="p-6">
+        <Card>
+          <CardContent className="flex items-center gap-3 py-6">
+            <AlertCircle className="h-5 w-5 text-status-error shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-text-primary">Failed to load users</p>
+              <p className="text-xs text-text-tertiary mt-1">{error.message}</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">

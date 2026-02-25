@@ -7,3 +7,5 @@ export * from './tenant';
 export * from './nfc';
 export * from './list';
 export * from './system';
+export * from './fleet';
+export * from './crm';

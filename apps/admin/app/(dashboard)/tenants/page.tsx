@@ -1,25 +1,32 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Card,
-  CardHeader,
   CardContent,
   Button,
   Badge,
   Input,
   DataTable,
   FilterBar,
+  Skeleton,
+  useToast,
 } from '@rally/ui';
 import type { FilterOption } from '@rally/ui';
 import type { ColumnDef } from '@tanstack/react-table';
+import { useTenants } from '@rally/firebase';
+import type { DealerGroup } from '@rally/firebase';
 import {
   Building2,
   Plus,
   Search,
   ExternalLink,
   MoreHorizontal,
+  AlertCircle,
+  Play,
+  Pause,
+  Trash2,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -39,122 +46,38 @@ interface TenantRow {
 }
 
 // ---------------------------------------------------------------------------
-// Mock data — TODO: Replace with real API route (GET /api/admin/tenants)
-// that uses Firebase Admin SDK to query all groups across the platform
+// Helper: derive slug from group name
 // ---------------------------------------------------------------------------
 
-const MOCK_TENANTS: TenantRow[] = [
-  {
-    id: 'grp_001',
-    slug: 'gallatin-cdjr',
-    groupName: 'Gallatin CDJR',
-    status: 'active',
-    usersCount: 45,
-    vehiclesCount: 892,
-    storesCount: 2,
-    createdAt: '2025-11-15',
-    subdomain: 'gallatin-cdjr.rally.vin',
-  },
-  {
-    id: 'grp_002',
-    slug: 'nashville-motors',
-    groupName: 'Nashville Motors Group',
-    status: 'active',
-    usersCount: 67,
-    vehiclesCount: 1203,
-    storesCount: 3,
-    createdAt: '2025-12-01',
-    subdomain: 'nashville-motors.rally.vin',
-  },
-  {
-    id: 'grp_003',
-    slug: 'liberty-ford',
-    groupName: 'Liberty Ford',
-    status: 'active',
-    usersCount: 32,
-    vehiclesCount: 548,
-    storesCount: 1,
-    createdAt: '2025-12-18',
-    subdomain: 'liberty-ford.rally.vin',
-  },
-  {
-    id: 'grp_004',
-    slug: 'springfield-auto',
-    groupName: 'Springfield Auto Mall',
-    status: 'trial',
-    usersCount: 12,
-    vehiclesCount: 234,
-    storesCount: 1,
-    createdAt: '2026-01-05',
-    subdomain: 'springfield-auto.rally.vin',
-  },
-  {
-    id: 'grp_005',
-    slug: 'cookeville-chevy',
-    groupName: 'Cookeville Chevrolet',
-    status: 'active',
-    usersCount: 28,
-    vehiclesCount: 412,
-    storesCount: 1,
-    createdAt: '2026-01-12',
-    subdomain: 'cookeville-chevy.rally.vin',
-  },
-  {
-    id: 'grp_006',
-    slug: 'murfreesboro-hyundai',
-    groupName: 'Murfreesboro Hyundai',
-    status: 'trial',
-    usersCount: 8,
-    vehiclesCount: 156,
-    storesCount: 1,
-    createdAt: '2026-02-01',
-    subdomain: 'murfreesboro-hyundai.rally.vin',
-  },
-  {
-    id: 'grp_007',
-    slug: 'test-dealer-old',
-    groupName: 'Test Dealer (Legacy)',
-    status: 'suspended',
+function slugify(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+// ---------------------------------------------------------------------------
+// Helper: map DealerGroup → TenantRow
+// ---------------------------------------------------------------------------
+
+function mapGroupToTenantRow(group: DealerGroup): TenantRow {
+  const slug = slugify(group.name);
+  const createdDate = group.createdAt instanceof Date
+    ? group.createdAt
+    : new Date(group.createdAt);
+
+  return {
+    id: group.id ?? '',
+    slug,
+    groupName: group.name,
+    status: group.status as TenantRow['status'],
     usersCount: 0,
     vehiclesCount: 0,
-    storesCount: 1,
-    createdAt: '2025-10-01',
-    subdomain: 'test-dealer-old.rally.vin',
-  },
-  {
-    id: 'grp_008',
-    slug: 'clarksville-toyota',
-    groupName: 'Clarksville Toyota',
-    status: 'active',
-    usersCount: 38,
-    vehiclesCount: 621,
-    storesCount: 2,
-    createdAt: '2026-01-20',
-    subdomain: 'clarksville-toyota.rally.vin',
-  },
-  {
-    id: 'grp_009',
-    slug: 'jackson-nissan',
-    groupName: 'Jackson Nissan',
-    status: 'active',
-    usersCount: 22,
-    vehiclesCount: 389,
-    storesCount: 1,
-    createdAt: '2026-02-10',
-    subdomain: 'jackson-nissan.rally.vin',
-  },
-  {
-    id: 'grp_010',
-    slug: 'demo-sandbox',
-    groupName: 'Rally Demo Sandbox',
-    status: 'trial',
-    usersCount: 5,
-    vehiclesCount: 50,
-    storesCount: 1,
-    createdAt: '2026-02-20',
-    subdomain: 'demo-sandbox.rally.vin',
-  },
-] as const;
+    storesCount: 0,
+    createdAt: createdDate.toISOString().split('T')[0] ?? '',
+    subdomain: `${slug}.rally.vin`,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Status badge variant mapping
@@ -189,103 +112,106 @@ const STATUS_FILTER_OPTIONS: FilterOption[] = [
 ] as const;
 
 // ---------------------------------------------------------------------------
-// Column definitions
+// Action Dropdown
 // ---------------------------------------------------------------------------
 
-const columns: ColumnDef<TenantRow, unknown>[] = [
-  {
-    accessorKey: 'slug',
-    header: 'Slug',
-    cell: ({ row }) => (
-      <div className="flex items-center gap-2">
-        <span className="font-[family-name:var(--font-geist-mono)] text-sm text-text-primary font-medium">
-          {row.original.slug}
-        </span>
-        <a
-          href={`https://${row.original.subdomain}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => e.stopPropagation()}
-          className="text-text-tertiary hover:text-rally-gold transition-colors"
+function TenantActionMenu({
+  tenant,
+  onClose,
+  onAction,
+}: {
+  tenant: TenantRow;
+  onClose: () => void;
+  onAction: (tenantId: string, action: 'suspend' | 'activate' | 'deprovision') => void;
+}) {
+  return (
+    <div
+      className="absolute right-0 top-full mt-1 z-50 w-48 rounded-[var(--radius-rally-lg)] bg-[var(--surface-overlay)] border border-[var(--surface-border)] shadow-xl py-1"
+      onMouseLeave={onClose}
+    >
+      {tenant.status !== 'active' && (
+        <button
+          type="button"
+          className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-border)] hover:text-[var(--text-primary)] transition-colors"
+          onClick={(e) => {
+            e.stopPropagation();
+            onAction(tenant.id, 'activate');
+            onClose();
+          }}
         >
-          <ExternalLink className="h-3 w-3" />
-        </a>
-      </div>
-    ),
-  },
-  {
-    accessorKey: 'groupName',
-    header: 'Group Name',
-    cell: ({ row }) => (
-      <span className="text-sm text-text-secondary">
-        {row.original.groupName}
-      </span>
-    ),
-  },
-  {
-    accessorKey: 'status',
-    header: 'Status',
-    cell: ({ row }) => (
-      <Badge variant={getStatusBadgeVariant(row.original.status)} size="sm">
-        {row.original.status}
-      </Badge>
-    ),
-  },
-  {
-    accessorKey: 'usersCount',
-    header: 'Users',
-    cell: ({ row }) => (
-      <span className="font-[family-name:var(--font-geist-mono)] text-sm text-text-secondary tabular-nums">
-        {row.original.usersCount}
-      </span>
-    ),
-  },
-  {
-    accessorKey: 'vehiclesCount',
-    header: 'Vehicles',
-    cell: ({ row }) => (
-      <span className="font-[family-name:var(--font-geist-mono)] text-sm text-text-secondary tabular-nums">
-        {row.original.vehiclesCount.toLocaleString()}
-      </span>
-    ),
-  },
-  {
-    accessorKey: 'storesCount',
-    header: 'Stores',
-    cell: ({ row }) => (
-      <span className="font-[family-name:var(--font-geist-mono)] text-sm text-text-secondary tabular-nums">
-        {row.original.storesCount}
-      </span>
-    ),
-  },
-  {
-    accessorKey: 'createdAt',
-    header: 'Created',
-    cell: ({ row }) => (
-      <span className="text-xs text-text-tertiary">
-        {row.original.createdAt}
-      </span>
-    ),
-  },
-  {
-    id: 'actions',
-    header: '',
-    enableSorting: false,
-    cell: ({ row }) => (
+          <Play className="h-3.5 w-3.5" />
+          Activate
+        </button>
+      )}
+      {tenant.status === 'active' && (
+        <button
+          type="button"
+          className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--status-warning)] hover:bg-[var(--surface-border)] transition-colors"
+          onClick={(e) => {
+            e.stopPropagation();
+            onAction(tenant.id, 'suspend');
+            onClose();
+          }}
+        >
+          <Pause className="h-3.5 w-3.5" />
+          Suspend
+        </button>
+      )}
+      <div className="my-1 border-t border-[var(--surface-border)]" />
       <button
         type="button"
+        className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--status-error)] hover:bg-[var(--surface-border)] transition-colors"
         onClick={(e) => {
           e.stopPropagation();
-          // TODO: Open action menu (suspend, impersonate, delete)
+          if (window.confirm(`Are you sure you want to deprovision "${tenant.groupName}"? This action cannot be undone.`)) {
+            onAction(tenant.id, 'deprovision');
+          }
+          onClose();
         }}
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+        Deprovision
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Action Cell
+// ---------------------------------------------------------------------------
+
+function TenantActionCell({
+  tenant,
+  onAction,
+}: {
+  tenant: TenantRow;
+  onAction: (tenantId: string, action: 'suspend' | 'activate' | 'deprovision') => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
         className="inline-flex h-8 w-8 items-center justify-center rounded-rally text-text-tertiary hover:text-text-primary hover:bg-surface-overlay transition-colors"
-        aria-label={`Actions for ${row.original.groupName}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(!open);
+        }}
+        aria-label={`Actions for ${tenant.groupName}`}
       >
         <MoreHorizontal className="h-4 w-4" />
       </button>
-    ),
-  },
-];
+      {open && (
+        <TenantActionMenu
+          tenant={tenant}
+          onClose={() => setOpen(false)}
+          onAction={onAction}
+        />
+      )}
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Page Component
@@ -293,12 +219,137 @@ const columns: ColumnDef<TenantRow, unknown>[] = [
 
 export default function TenantsListPage() {
   const router = useRouter();
+  const { toast } = useToast();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
-  // TODO: Replace mock with real data from API route
-  const loading = false;
-  const tenants = MOCK_TENANTS;
+  // Real Firestore data via useTenants hook
+  const { tenants: rawTenants, loading, error } = useTenants({});
+
+  // Map DealerGroup[] → TenantRow[]
+  const tenants: TenantRow[] = useMemo(
+    () => rawTenants.map(mapGroupToTenantRow),
+    [rawTenants],
+  );
+
+  // Tenant action handler
+  const handleTenantAction = useCallback(
+    async (tenantId: string, action: 'suspend' | 'activate' | 'deprovision') => {
+      try {
+        const res = await fetch(`/api/admin/tenants/${tenantId}/${action}`, {
+          method: 'POST',
+        });
+
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({ message: 'Unknown error' })) as { message?: string };
+          throw new Error(body.message ?? `Failed to ${action} tenant`);
+        }
+
+        toast({
+          type: 'success',
+          title: `Tenant ${action}d`,
+          description: `Successfully ${action === 'activate' ? 'activated' : action === 'suspend' ? 'suspended' : 'deprovisioned'} the tenant.`,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'An unexpected error occurred';
+        toast({
+          type: 'error',
+          title: `Failed to ${action} tenant`,
+          description: message,
+        });
+      }
+    },
+    [toast],
+  );
+
+  // Column definitions (defined inside component to access handleTenantAction)
+  const columns: ColumnDef<TenantRow, unknown>[] = useMemo(() => [
+    {
+      accessorKey: 'slug',
+      header: 'Slug',
+      cell: ({ row }) => (
+        <div className="flex items-center gap-2">
+          <span className="font-[family-name:var(--font-geist-mono)] text-sm text-text-primary font-medium">
+            {row.original.slug}
+          </span>
+          <a
+            href={`https://${row.original.subdomain}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="text-text-tertiary hover:text-rally-gold transition-colors"
+          >
+            <ExternalLink className="h-3 w-3" />
+          </a>
+        </div>
+      ),
+    },
+    {
+      accessorKey: 'groupName',
+      header: 'Group Name',
+      cell: ({ row }) => (
+        <span className="text-sm text-text-secondary">
+          {row.original.groupName}
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'status',
+      header: 'Status',
+      cell: ({ row }) => (
+        <Badge variant={getStatusBadgeVariant(row.original.status)} size="sm">
+          {row.original.status}
+        </Badge>
+      ),
+    },
+    {
+      accessorKey: 'usersCount',
+      header: 'Users',
+      cell: ({ row }) => (
+        <span className="font-[family-name:var(--font-geist-mono)] text-sm text-text-secondary tabular-nums">
+          {row.original.usersCount}
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'vehiclesCount',
+      header: 'Vehicles',
+      cell: ({ row }) => (
+        <span className="font-[family-name:var(--font-geist-mono)] text-sm text-text-secondary tabular-nums">
+          {row.original.vehiclesCount.toLocaleString()}
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'storesCount',
+      header: 'Stores',
+      cell: ({ row }) => (
+        <span className="font-[family-name:var(--font-geist-mono)] text-sm text-text-secondary tabular-nums">
+          {row.original.storesCount}
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'createdAt',
+      header: 'Created',
+      cell: ({ row }) => (
+        <span className="text-xs text-text-tertiary">
+          {row.original.createdAt}
+        </span>
+      ),
+    },
+    {
+      id: 'actions',
+      header: '',
+      enableSorting: false,
+      cell: ({ row }) => (
+        <TenantActionCell
+          tenant={row.original}
+          onAction={handleTenantAction}
+        />
+      ),
+    },
+  ], [handleTenantAction]);
 
   // Filter by status
   const filteredTenants = useMemo(() => {
@@ -327,9 +378,26 @@ export default function TenantsListPage() {
   const totalVehicles = tenants.reduce((sum, t) => sum + t.vehiclesCount, 0);
   const activeTenants = tenants.filter((t) => t.status === 'active').length;
 
+  // Error state
+  if (error) {
+    return (
+      <div className="p-6">
+        <Card>
+          <CardContent className="flex items-center gap-3 py-6">
+            <AlertCircle className="h-5 w-5 text-status-error shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-text-primary">Failed to load tenants</p>
+              <p className="text-xs text-text-tertiary mt-1">{error.message}</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-6">
-      {/* ── Header ──────────────────────────────────────────────── */}
+      {/* -- Header ---------------------------------------------------- */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold text-text-primary">Tenants</h1>
@@ -346,7 +414,7 @@ export default function TenantsListPage() {
         </Button>
       </div>
 
-      {/* ── Summary Stats ────────────────────────────────────────── */}
+      {/* -- Summary Stats ------------------------------------------------ */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card>
           <CardContent className="flex items-center gap-3 py-3">
@@ -356,7 +424,7 @@ export default function TenantsListPage() {
             <div>
               <p className="text-xs text-text-tertiary uppercase tracking-wider">Active</p>
               <p className="text-lg font-bold text-text-primary font-[family-name:var(--font-geist-mono)]">
-                {activeTenants}
+                {loading ? <Skeleton variant="text" className="h-6 w-8 inline-block" /> : activeTenants}
               </p>
             </div>
           </CardContent>
@@ -369,7 +437,7 @@ export default function TenantsListPage() {
             <div>
               <p className="text-xs text-text-tertiary uppercase tracking-wider">Total Users</p>
               <p className="text-lg font-bold text-text-primary font-[family-name:var(--font-geist-mono)]">
-                {totalUsers.toLocaleString()}
+                {loading ? <Skeleton variant="text" className="h-6 w-12 inline-block" /> : totalUsers.toLocaleString()}
               </p>
             </div>
           </CardContent>
@@ -382,14 +450,14 @@ export default function TenantsListPage() {
             <div>
               <p className="text-xs text-text-tertiary uppercase tracking-wider">Total Vehicles</p>
               <p className="text-lg font-bold text-text-primary font-[family-name:var(--font-geist-mono)]">
-                {totalVehicles.toLocaleString()}
+                {loading ? <Skeleton variant="text" className="h-6 w-12 inline-block" /> : totalVehicles.toLocaleString()}
               </p>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* ── Filters + Search ─────────────────────────────────────── */}
+      {/* -- Filters + Search -------------------------------------------- */}
       <div className="space-y-3">
         <FilterBar
           options={filterOptionsWithCounts}
@@ -404,7 +472,7 @@ export default function TenantsListPage() {
         />
       </div>
 
-      {/* ── Data Table ───────────────────────────────────────────── */}
+      {/* -- Data Table -------------------------------------------------- */}
       <DataTable<TenantRow>
         columns={columns}
         data={filteredTenants}

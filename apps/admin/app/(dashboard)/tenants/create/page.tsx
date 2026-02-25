@@ -191,12 +191,10 @@ export default function TenantCreatePage() {
   }, [groupName, slugManuallyEdited, setValue]);
 
   // ---------------------------------------------------------------------------
-  // Simulated provisioning flow
-  // TODO: Replace with real API route call (POST /api/admin/tenants/provision)
-  // that invokes provisionTenant() from @rally/infra on the server
+  // Real provisioning — calls POST /api/admin/tenants/provision
   // ---------------------------------------------------------------------------
 
-  const simulateProvision = useCallback(
+  const realProvision = useCallback(
     async (data: TenantFormData) => {
       setIsProvisioning(true);
       setProvisionResult(null);
@@ -210,7 +208,7 @@ export default function TenantCreatePage() {
         'seed_firestore_group',
         'create_principal_user',
         'write_audit_log',
-      ];
+      ] as const;
 
       const steps: ProvisioningStep[] = stepNames.map((name) => ({
         name,
@@ -219,43 +217,81 @@ export default function TenantCreatePage() {
 
       setProvisionSteps([...steps]);
 
-      // Simulate each step with a delay
-      for (let i = 0; i < steps.length; i++) {
-        const step = steps[i];
-        if (!step) continue;
+      try {
+        const res = await fetch('/api/admin/tenants/provision', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            groupName: data.groupName,
+            slug: data.slug,
+            principalEmail: data.principalEmail,
+            principalName: data.principalName,
+          }),
+        });
 
-        // Mark running
-        step.status = 'running';
+        const result = await res.json() as {
+          success?: boolean;
+          data?: { groupId?: string };
+          error?: string;
+          steps?: Array<{ name: string; status: string; error?: string }>;
+          failedStep?: number;
+        };
+
+        if (res.ok && result.success) {
+          // Mark all steps completed
+          steps.forEach((s) => { s.status = 'completed'; });
+          setProvisionSteps([...steps]);
+          setProvisionResult({
+            success: true,
+            groupId: result.data?.groupId,
+            slug: data.slug,
+          });
+          toast({
+            type: 'success',
+            title: 'Tenant provisioned',
+            description: `${data.groupName} is live at ${data.slug}.rally.vin`,
+          });
+        } else {
+          // Mark steps based on response
+          const failedStepIndex = result.failedStep ?? steps.length - 1;
+          steps.forEach((s, i) => {
+            if (i < failedStepIndex) {
+              s.status = 'completed';
+            } else if (i === failedStepIndex) {
+              s.status = 'failed';
+              s.error = result.error ?? 'Unknown error';
+            }
+            // remaining stay 'pending'
+          });
+          setProvisionSteps([...steps]);
+          setProvisionResult({
+            success: false,
+            slug: data.slug,
+            error: result.error ?? 'Provisioning failed',
+          });
+        }
+      } catch (err) {
+        // Network/unexpected error
+        steps.forEach((s) => {
+          if (s.status === 'pending') {
+            s.status = 'failed';
+            s.error = 'Unreachable';
+          }
+        });
         setProvisionSteps([...steps]);
-
-        // Simulate work
-        await new Promise((resolve) => setTimeout(resolve, 600 + Math.random() * 400));
-
-        // Mark completed
-        step.status = 'completed';
-        setProvisionSteps([...steps]);
+        setProvisionResult({
+          success: false,
+          slug: data.slug,
+          error: err instanceof Error ? err.message : 'Network error',
+        });
+      } finally {
+        setIsProvisioning(false);
       }
-
-      // Simulate success
-      const mockGroupId = `grp_${Date.now().toString(36)}`;
-      setProvisionResult({
-        success: true,
-        groupId: mockGroupId,
-        slug: data.slug,
-      });
-
-      setIsProvisioning(false);
-
-      toast({
-        type: 'success',
-        title: 'Tenant provisioned',
-        description: `${data.groupName} is live at ${data.slug}.rally.vin`,
-      });
     },
     [toast],
   );
 
-  const onSubmit = handleSubmit(simulateProvision);
+  const onSubmit = handleSubmit(realProvision);
 
   // Show provisioning progress view
   if (provisionSteps.length > 0) {

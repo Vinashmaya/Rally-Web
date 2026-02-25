@@ -10,7 +10,12 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import type { FirebaseApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import type { Auth } from 'firebase/auth';
-import { getFirestore, enableMultiTabIndexedDbPersistence } from 'firebase/firestore';
+import {
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  getFirestore,
+} from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import type { FirebaseStorage } from 'firebase/storage';
@@ -45,20 +50,22 @@ function initFirebase() {
   // Prevent double-initialization (Next.js hot reload, multiple imports)
   const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
   const auth = getAuth(app);
-  const db = getFirestore(app);
-  const storage = getStorage(app);
 
-  // Enable offline persistence for Firestore (browser only)
-  if (typeof window !== 'undefined') {
-    enableMultiTabIndexedDbPersistence(db).catch((err: unknown) => {
-      const error = err as { code?: string };
-      if (error.code === 'failed-precondition') {
-        console.warn('[Rally Firebase] Persistence failed: multiple tabs open');
-      } else if (error.code === 'unimplemented') {
-        console.warn('[Rally Firebase] Persistence not supported in this browser');
-      }
+  // Firebase v11 uses initializeFirestore with local cache settings
+  // instead of the deprecated enableMultiTabIndexedDbPersistence.
+  let db: Firestore;
+  try {
+    db = initializeFirestore(app, {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+      }),
     });
+  } catch {
+    // Already initialized (hot reload) — fall back to existing instance
+    db = getFirestore(app);
   }
+
+  const storage = getStorage(app);
 
   return { app, auth, db, storage };
 }

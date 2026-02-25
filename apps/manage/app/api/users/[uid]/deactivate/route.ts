@@ -22,6 +22,15 @@ export async function POST(
     }
 
     const userData = userDoc.data();
+
+    // Tenant isolation: can only deactivate users in your own group
+    if (auth.groupId && userData?.groupId && auth.groupId !== userData.groupId) {
+      return NextResponse.json(
+        { error: 'Forbidden: cannot deactivate users from a different tenant' },
+        { status: 403 },
+      );
+    }
+
     if (userData?.status === 'deactivated') {
       return NextResponse.json({ error: 'User is already deactivated' }, { status: 409 });
     }

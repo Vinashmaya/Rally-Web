@@ -15,6 +15,27 @@ export async function POST(
 
     const { uid } = await params;
 
+    // Guard: cannot disable yourself
+    if (uid === auth.uid) {
+      return NextResponse.json(
+        { error: 'Cannot disable your own account' },
+        { status: 400 },
+      );
+    }
+
+    // Guard: cannot disable another super admin
+    const superAdminUids = (process.env.SUPER_ADMIN_UIDS ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (superAdminUids.includes(uid)) {
+      return NextResponse.json(
+        { error: 'Cannot disable a super admin account' },
+        { status: 403 },
+      );
+    }
+
     // Disable in Firebase Auth
     await adminAuth.updateUser(uid, { disabled: true });
 

@@ -42,6 +42,15 @@ export async function PUT(
     }
 
     const userData = userDoc.data();
+
+    // Tenant isolation: can only change roles for users in your own group
+    if (auth.groupId && userData?.groupId && auth.groupId !== userData.groupId) {
+      return NextResponse.json(
+        { error: 'Forbidden: cannot modify users from a different tenant' },
+        { status: 403 },
+      );
+    }
+
     const previousRole = userData?.role as string;
 
     // Update custom claims in Firebase Auth

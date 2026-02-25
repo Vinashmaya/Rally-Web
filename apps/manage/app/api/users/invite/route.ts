@@ -35,6 +35,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Tenant isolation: caller can only invite into their own group
+    if (auth.groupId && auth.groupId !== groupId) {
+      return NextResponse.json(
+        { error: 'Forbidden: cannot invite users into a different tenant group' },
+        { status: 403 },
+      );
+    }
+
     // Validate role
     const validRoles = USER_ROLE_VALUES;
     if (!validRoles.includes(role as typeof validRoles[number])) {
@@ -57,53 +65,62 @@ export async function POST(request: NextRequest) {
 
     const { uid } = userRecord;
 
-    // Step 2: Set custom claims for role-based access
-    await adminAuth.setCustomUserClaims(uid, {
-      groupId,
-      dealershipId,
-      role,
-    });
-
-    // Step 3: Write user document to Firestore
-    await adminDb.collection('users').doc(uid).set({
-      uid,
-      email,
-      displayName,
-      role,
-      phone: phone ?? null,
-      dealershipId,
-      groupId,
-      status: 'active',
-      mustResetPassword: true,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    // Step 4: Write membership document
-    await adminDb
-      .collection('employees')
-      .doc(uid)
-      .collection('memberships')
-      .doc(dealershipId)
-      .set({
-        dealershipId,
+    // Steps 2-5 are wrapped — if any fail, roll back the Auth user
+    // to prevent orphaned accounts with known temp passwords
+    try {
+      // Step 2: Set custom claims for role-based access
+      await adminAuth.setCustomUserClaims(uid, {
         groupId,
+        dealershipId,
         role,
-        status: 'active',
-        joinedAt: now,
       });
 
-    // Step 5: Write audit log
-    await adminDb.collection('auditLogs').add({
-      action: 'user.invited',
-      targetUid: uid,
-      email,
-      role,
-      dealershipId,
-      groupId,
-      timestamp: now,
-      actorType: 'manager',
-    });
+      // Step 3: Write user document to Firestore
+      await adminDb.collection('users').doc(uid).set({
+        uid,
+        email,
+        displayName,
+        role,
+        phone: phone ?? null,
+        dealershipId,
+        groupId,
+        status: 'active',
+        mustResetPassword: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      // Step 4: Write membership document
+      await adminDb
+        .collection('employees')
+        .doc(uid)
+        .collection('memberships')
+        .doc(dealershipId)
+        .set({
+          dealershipId,
+          groupId,
+          role,
+          status: 'active',
+          joinedAt: now,
+        });
+
+      // Step 5: Write audit log
+      await adminDb.collection('auditLogs').add({
+        action: 'user.invited',
+        targetUid: uid,
+        actorUid: auth.uid,
+        email,
+        role,
+        dealershipId,
+        groupId,
+        timestamp: now,
+        actorType: 'manager',
+      });
+    } catch (firestoreError) {
+      // Rollback: delete the Auth user so no orphan exists
+      await adminAuth.deleteUser(uid).catch(() => {});
+      throw firestoreError;
+    }
 
     return NextResponse.json({
       success: true,

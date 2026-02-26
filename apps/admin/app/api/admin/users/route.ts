@@ -11,9 +11,11 @@ export async function GET(request: NextRequest) {
 
   try {
     // Get all memberships across all tenants
+    // No orderBy — collection group queries on 'joinedAt' require an explicit
+    // index that hasn't been deployed yet. We fetch all memberships and sort
+    // client-side after merging with Auth data.
     const membershipsSnapshot = await getAdminDb()
       .collectionGroup('memberships')
-      .orderBy('joinedAt', 'desc')
       .get();
 
     // Collect unique UIDs
@@ -78,7 +80,9 @@ export async function GET(request: NextRequest) {
         status: authUser?.disabled ? 'disabled' : (m.status === 'suspended' ? 'disabled' : 'active'),
         dealershipId: m.storeId ?? '',
         groupId: m.groupId ?? '',
-        joinedAt: m.joinedAt ?? null,
+        joinedAt: m.joinedAt
+          ? new Date(((m.joinedAt as { _seconds?: number })._seconds ?? 0) * 1000).toISOString()
+          : null,
       };
     });
 

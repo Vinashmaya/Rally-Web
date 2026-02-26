@@ -1,11 +1,13 @@
 'use client';
 
-// Domain hook: cross-tenant vehicle listener via collection group query
-// Uses useCollectionGroup to query `vehicles` across all tenants
+// Domain hook: cross-tenant vehicle listener via regular collection query
+// Queries top-level `vehicles` collection filtered to inventory docs (have dealershipId)
+// Excludes vehicle research/reference docs that lack dealershipId
 // Supports client-side search and status filtering
 
 import { useMemo } from 'react';
-import { useCollectionGroup } from './useFirestore';
+import { where } from 'firebase/firestore';
+import { useCollection } from './useFirestore';
 import type { Vehicle } from '../types/vehicle';
 
 interface UseAllVehiclesOptions {
@@ -22,17 +24,22 @@ interface UseAllVehiclesReturn {
 export function useAllVehicles(options: UseAllVehiclesOptions = {}): UseAllVehiclesReturn {
   const { search, status } = options;
 
-  // No orderBy — collection group queries require explicit indexes.
-  // Sort client-side after fetch instead.
-  const constraintKey = 'allVehicles:vehicles';
+  // Filter to inventory vehicles only (have dealershipId).
+  // The top-level `vehicles` collection also contains ~1,700 reference docs
+  // (keyed by year-make-model-trim) that lack dealershipId/stockNumber/vin.
+  const constraints = useMemo(() => [
+    where('dealershipId', '!=', ''),
+  ], []);
 
-  const { data, loading, error } = useCollectionGroup<Vehicle>(
+  const constraintKey = 'allVehicles:vehicles:hasDealershipId';
+
+  const { data, loading, error } = useCollection<Vehicle>(
     'vehicles',
-    [],
+    constraints,
     constraintKey,
   );
 
-  // Client-side sorting + filtering (avoids needing collection group index)
+  // Client-side sorting + filtering
   const allVehicles = useMemo(() => {
     let filtered = [...data].sort((a, b) =>
       (a.stockNumber ?? '').localeCompare(b.stockNumber ?? '', undefined, { numeric: true }),

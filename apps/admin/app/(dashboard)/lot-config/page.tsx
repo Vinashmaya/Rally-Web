@@ -22,6 +22,10 @@ import {
   FlipVertical,
   Loader2,
   AlertCircle,
+  ChevronDown,
+  ChevronRight,
+  Check,
+  Settings2,
 } from 'lucide-react';
 import type {
   LotGridConfig,
@@ -87,6 +91,12 @@ function createDefaultOverlay(): LotImageOverlay {
   };
 }
 
+/** Strip Firestore timestamps and metadata before POSTing back */
+function stripFirestoreMetadata(config: LotGridConfig): LotGridConfig {
+  const { createdAt, updatedAt, createdBy, ...rest } = config;
+  return rest;
+}
+
 // ---------------------------------------------------------------------------
 // Overlay Tool Tabs
 // ---------------------------------------------------------------------------
@@ -111,6 +121,53 @@ interface StoreOption {
   storeId: string;
   storeName: string;
 }
+
+// ---------------------------------------------------------------------------
+// Collapsible Section
+// ---------------------------------------------------------------------------
+
+function Section({ title, icon: Icon, defaultOpen = true, children }: {
+  title: string;
+  icon: typeof Grid3X3;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border border-[var(--surface-border)] rounded-lg overflow-hidden">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-2 px-3 py-2.5 bg-[var(--surface-overlay)] hover:bg-[var(--surface-hover)] transition-colors text-left"
+      >
+        <Icon className="h-4 w-4 text-[var(--rally-gold)]" />
+        <span className="text-sm font-medium text-[var(--text-primary)] flex-1">{title}</span>
+        {open ? (
+          <ChevronDown className="h-4 w-4 text-[var(--text-tertiary)]" />
+        ) : (
+          <ChevronRight className="h-4 w-4 text-[var(--text-tertiary)]" />
+        )}
+      </button>
+      {open && <div className="p-3 space-y-3 border-t border-[var(--surface-border)]">{children}</div>}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Input helpers
+// ---------------------------------------------------------------------------
+
+function LabeledInput({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+const inputCls = 'w-full px-3 py-2 rounded-lg bg-[var(--surface-base)] border border-[var(--surface-border)] text-[var(--text-primary)] text-sm focus:border-[var(--rally-gold)] focus:outline-none transition-colors';
+const monoInputCls = `${inputCls} font-mono`;
+const selectCls = inputCls;
 
 // ---------------------------------------------------------------------------
 // Page Component
@@ -147,7 +204,7 @@ export default function LotConfigPage() {
     [config.imageOverlays, selectedOverlayId],
   );
 
-  // Load stores on mount — fetches groups from tenants API, then stores per group
+  // Load stores on mount
   useEffect(() => {
     async function loadStores() {
       try {
@@ -158,7 +215,6 @@ export default function LotConfigPage() {
 
         const storeList: StoreOption[] = [];
         for (const group of groups) {
-          // Fetch actual stores for this group
           try {
             const storesRes = await fetch(`/api/admin/lot-config/stores?groupId=${group.id}`);
             if (storesRes.ok) {
@@ -173,7 +229,6 @@ export default function LotConfigPage() {
               }
             }
           } catch {
-            // Fallback: use group as store (single-store groups)
             storeList.push({
               groupId: group.id,
               groupName: group.name ?? group.id,
@@ -183,6 +238,11 @@ export default function LotConfigPage() {
           }
         }
         setStores(storeList);
+
+        // Auto-select first store
+        if (storeList.length > 0) {
+          setSelectedStore(storeList[0] ?? null);
+        }
       } catch (err) {
         console.error('Failed to load stores:', err);
       } finally {
@@ -211,6 +271,11 @@ export default function LotConfigPage() {
         if (!res.ok) throw new Error('Failed to load configs');
         const { configs } = await res.json();
         setExistingConfigs(configs);
+
+        // Auto-load first config if there is one
+        if (configs.length > 0) {
+          setConfig(configs[0]);
+        }
       } catch (err) {
         console.error('Failed to load lot configs:', err);
       } finally {
@@ -226,7 +291,6 @@ export default function LotConfigPage() {
 
   const addGrid = useCallback(() => {
     const newGrid = createDefaultGrid(config.grids.length);
-    // If we have a map click location, use it as origin
     if (lastClickCoords) {
       newGrid.origin = { latitude: lastClickCoords.lat, longitude: lastClickCoords.lng };
     }
@@ -285,7 +349,7 @@ export default function LotConfigPage() {
   }, []);
 
   // ---------------------------------------------------------------------------
-  // Save
+  // Save — strips Firestore metadata before POSTing
   // ---------------------------------------------------------------------------
 
   const handleSave = useCallback(async () => {
@@ -300,7 +364,7 @@ export default function LotConfigPage() {
 
     try {
       const payload = {
-        ...config,
+        ...stripFirestoreMetadata(config),
         groupId: selectedStore.groupId,
         storeId: selectedStore.storeId,
       };
@@ -313,7 +377,7 @@ export default function LotConfigPage() {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Unknown error' }));
-        throw new Error(err.error ?? 'Failed to save');
+        throw new Error(err.details ? JSON.stringify(err.details) : err.error ?? 'Failed to save');
       }
 
       const result = await res.json();
@@ -323,6 +387,7 @@ export default function LotConfigPage() {
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) {
+      console.error('[lot-config] Save error:', err);
       setSaveError(err instanceof Error ? err.message : 'Failed to save');
     } finally {
       setSaving(false);
@@ -348,7 +413,7 @@ export default function LotConfigPage() {
   }, []);
 
   const handleCellClick = useCallback(
-    (gridId: string, row: number, col: number, dealerName: string) => {
+    (gridId: string, _row: number, _col: number, _dealerName: string) => {
       setSelectedGridId(gridId);
       setPanel('grids');
     },
@@ -360,27 +425,30 @@ export default function LotConfigPage() {
   // ---------------------------------------------------------------------------
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className="h-[calc(100vh-4rem)] flex flex-col">
+      {/* Header Bar */}
+      <div className="flex items-center justify-between pb-4 flex-shrink-0">
         <div className="flex items-center gap-3">
           <Grid3X3 className="h-6 w-6 text-[var(--rally-gold)]" />
           <h1 className="text-2xl font-bold text-[var(--text-primary)]">Lot Configuration</h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           {saveError && (
-            <span className="text-xs text-[var(--status-error)] flex items-center gap-1">
-              <AlertCircle className="h-3 w-3" />
+            <span className="text-sm text-[var(--status-error)] flex items-center gap-1.5 max-w-xs truncate">
+              <AlertCircle className="h-4 w-4 flex-shrink-0" />
               {saveError}
             </span>
           )}
           {saveSuccess && (
-            <span className="text-xs text-[#22C55E]">Saved!</span>
+            <span className="text-sm text-[#22C55E] flex items-center gap-1.5">
+              <Check className="h-4 w-4" />
+              Saved!
+            </span>
           )}
           <button
             onClick={handleSave}
             disabled={saving || !selectedStore}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--rally-gold)] text-black font-medium text-sm hover:bg-[var(--rally-gold-hover)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[var(--rally-gold)] text-black font-semibold text-sm hover:bg-[var(--rally-gold-hover)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-lg shadow-[var(--rally-gold)]/20"
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Save Config
@@ -388,147 +456,16 @@ export default function LotConfigPage() {
         </div>
       </div>
 
-      {/* Store Selector + Config Name */}
-      <div className="flex gap-3">
-        {/* Store Picker */}
-        <div className="flex-1">
-          <label className="block text-xs text-[var(--text-tertiary)] mb-1">Store</label>
-          <select
-            value={selectedStore ? `${selectedStore.groupId}::${selectedStore.storeId}` : ''}
-            onChange={(e) => {
-              const store = stores.find(
-                (s) => `${s.groupId}::${s.storeId}` === e.target.value,
-              );
-              setSelectedStore(store ?? null);
-            }}
-            className="w-full px-3 py-2 rounded-lg bg-[var(--surface-overlay)] border border-[var(--surface-border)] text-[var(--text-primary)] text-sm"
-          >
-            <option value="">Select a store...</option>
-            {stores.map((s) => (
-              <option key={`${s.groupId}::${s.storeId}`} value={`${s.groupId}::${s.storeId}`}>
-                {s.groupName} — {s.storeName}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Config Name */}
-        <div className="flex-1">
-          <label className="block text-xs text-[var(--text-tertiary)] mb-1">Config Name</label>
-          <input
-            type="text"
-            value={config.name}
-            onChange={(e) => setConfig((prev) => ({ ...prev, name: e.target.value }))}
-            className="w-full px-3 py-2 rounded-lg bg-[var(--surface-overlay)] border border-[var(--surface-border)] text-[var(--text-primary)] text-sm"
-            placeholder="Main Lot"
-          />
-        </div>
-
-        {/* Existing Configs */}
-        {existingConfigs.length > 0 && (
-          <div className="flex-1">
-            <label className="block text-xs text-[var(--text-tertiary)] mb-1">
-              Load Existing ({existingConfigs.length})
-            </label>
-            <select
-              onChange={(e) => {
-                const cfg = existingConfigs.find((c) => c.id === e.target.value);
-                if (cfg) loadConfig(cfg);
-              }}
-              className="w-full px-3 py-2 rounded-lg bg-[var(--surface-overlay)] border border-[var(--surface-border)] text-[var(--text-primary)] text-sm"
-            >
-              <option value="">Select config...</option>
-              {existingConfigs.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-          </div>
-        )}
-      </div>
-
-      {/* Map Center Controls */}
-      <div className="flex gap-3 items-end">
-        <div className="flex-1 flex gap-2">
-          <div className="flex-1">
-            <label className="block text-xs text-[var(--text-tertiary)] mb-1">Center Lat</label>
-            <input
-              type="number"
-              step="0.00001"
-              value={config.center.latitude}
-              onChange={(e) =>
-                setConfig((prev) => ({
-                  ...prev,
-                  center: { ...prev.center, latitude: parseFloat(e.target.value) || 0 },
-                }))
-              }
-              className="w-full px-3 py-2 rounded-lg bg-[var(--surface-overlay)] border border-[var(--surface-border)] text-[var(--text-primary)] text-sm font-mono"
-            />
-          </div>
-          <div className="flex-1">
-            <label className="block text-xs text-[var(--text-tertiary)] mb-1">Center Lng</label>
-            <input
-              type="number"
-              step="0.00001"
-              value={config.center.longitude}
-              onChange={(e) =>
-                setConfig((prev) => ({
-                  ...prev,
-                  center: { ...prev.center, longitude: parseFloat(e.target.value) || 0 },
-                }))
-              }
-              className="w-full px-3 py-2 rounded-lg bg-[var(--surface-overlay)] border border-[var(--surface-border)] text-[var(--text-primary)] text-sm font-mono"
-            />
-          </div>
-        </div>
-        <div className="w-20">
-          <label className="block text-xs text-[var(--text-tertiary)] mb-1">Zoom</label>
-          <input
-            type="number"
-            min={1}
-            max={22}
-            value={config.zoom}
-            onChange={(e) => setConfig((prev) => ({ ...prev, zoom: parseInt(e.target.value) || 19 }))}
-            className="w-full px-3 py-2 rounded-lg bg-[var(--surface-overlay)] border border-[var(--surface-border)] text-[var(--text-primary)] text-sm font-mono"
-          />
-        </div>
-        <div className="w-24">
-          <label className="block text-xs text-[var(--text-tertiary)] mb-1">Bearing</label>
-          <input
-            type="number"
-            min={-360}
-            max={360}
-            value={config.bearing}
-            onChange={(e) => setConfig((prev) => ({ ...prev, bearing: parseInt(e.target.value) || 0 }))}
-            className="w-full px-3 py-2 rounded-lg bg-[var(--surface-overlay)] border border-[var(--surface-border)] text-[var(--text-primary)] text-sm font-mono"
-          />
-        </div>
-        {lastClickCoords && (
-          <button
-            onClick={() => {
-              setConfig((prev) => ({
-                ...prev,
-                center: { latitude: lastClickCoords.lat, longitude: lastClickCoords.lng },
-              }));
-            }}
-            className="flex items-center gap-1 px-3 py-2 rounded-lg bg-[var(--surface-overlay)] border border-[var(--surface-border)] text-[var(--rally-gold)] text-xs hover:bg-[var(--surface-hover)] transition-colors"
-            title="Use last clicked coordinates as center"
-          >
-            <MapPin className="h-3 w-3" />
-            Use Clicked
-          </button>
-        )}
-      </div>
-
-      {/* Main Layout: Map (9:16 portrait) + Side Panel */}
-      <div className="flex gap-4" style={{ height: 'calc(100vh - 350px)', minHeight: '600px' }}>
-        {/* Map — 9:16 portrait to match mobile app */}
-        <div className="relative h-full" style={{ aspectRatio: '9 / 16' }}>
+      {/* Main: Map + Control Panel */}
+      <div className="flex gap-4 flex-1 min-h-0">
+        {/* Left: 9:16 Map */}
+        <div className="relative h-full flex-shrink-0" style={{ aspectRatio: '9 / 16' }}>
           <LotConfigMap
             config={config}
             onCellClick={handleCellClick}
             onMapClick={handleMapClick}
           />
-          {/* Coordinate display */}
+          {/* Floating coordinate display */}
           {lastClickCoords && (
             <div className="absolute bottom-3 left-3 px-3 py-1.5 rounded-lg bg-black/80 border border-[var(--surface-border)] text-xs font-mono text-[var(--text-secondary)]">
               {lastClickCoords.lat.toFixed(6)}, {lastClickCoords.lng.toFixed(6)}
@@ -536,242 +473,391 @@ export default function LotConfigPage() {
           )}
         </div>
 
-        {/* Side Panel */}
-        <div className="flex-1 min-w-[280px] max-w-sm flex flex-col gap-3 overflow-y-auto">
-          {/* Panel Tabs */}
-          <div className="flex rounded-lg bg-[var(--surface-overlay)] border border-[var(--surface-border)] p-1">
-            <button
-              onClick={() => setPanel('grids')}
-              className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                panel === 'grids'
-                  ? 'bg-[var(--rally-gold)] text-black'
-                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-              }`}
-            >
-              <Grid3X3 className="h-3.5 w-3.5" />
-              Grids ({config.grids.length})
-            </button>
-            <button
-              onClick={() => setPanel('overlays')}
-              className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                panel === 'overlays'
-                  ? 'bg-[var(--rally-gold)] text-black'
-                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-              }`}
-            >
-              <ImageIcon className="h-3.5 w-3.5" />
-              Overlays ({config.imageOverlays.length})
-            </button>
-          </div>
+        {/* Right: Control Panel (scrollable) */}
+        <div className="flex-1 overflow-y-auto space-y-3 pr-1 min-w-[320px]">
 
-          {/* Grids Panel */}
-          {panel === 'grids' && (
-            <>
-              {/* Grid List */}
-              <div className="space-y-1">
-                {config.grids.map((grid) => (
-                  <div
-                    key={grid.id}
-                    onClick={() => setSelectedGridId(grid.id === selectedGridId ? null : grid.id)}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors ${
-                      grid.id === selectedGridId
-                        ? 'bg-[var(--rally-gold)]/10 border border-[var(--rally-gold)]/30'
-                        : 'bg-[var(--surface-overlay)] border border-[var(--surface-border)] hover:border-[var(--surface-hover)]'
-                    }`}
-                  >
-                    <div
-                      className="h-3 w-3 rounded-sm flex-shrink-0"
-                      style={{ backgroundColor: grid.color }}
-                    />
-                    <span className="text-sm text-[var(--text-primary)] flex-1 truncate">
-                      {grid.label}
-                    </span>
-                    <Badge variant="default" size="sm">
-                      {grid.rows}×{grid.cols}
-                    </Badge>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        updateGrid(grid.id, { visible: !grid.visible });
-                      }}
-                      className="p-1 rounded hover:bg-[var(--surface-hover)]"
-                    >
-                      {grid.visible ? (
-                        <Eye className="h-3.5 w-3.5 text-[var(--text-secondary)]" />
-                      ) : (
-                        <EyeOff className="h-3.5 w-3.5 text-[var(--text-disabled)]" />
-                      )}
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeGrid(grid.id);
-                      }}
-                      className="p-1 rounded hover:bg-[var(--status-error)]/10"
-                    >
-                      <Trash2 className="h-3.5 w-3.5 text-[var(--status-error)]" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              {/* Add Grid */}
-              <button
-                onClick={addGrid}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-[var(--surface-border)] text-[var(--text-secondary)] text-sm hover:border-[var(--rally-gold)] hover:text-[var(--rally-gold)] transition-colors"
+          {/* Store & Config Selection */}
+          <Section title="Store & Config" icon={MapPin} defaultOpen={true}>
+            <LabeledInput label="Store">
+              <select
+                value={selectedStore ? `${selectedStore.groupId}::${selectedStore.storeId}` : ''}
+                onChange={(e) => {
+                  const store = stores.find(
+                    (s) => `${s.groupId}::${s.storeId}` === e.target.value,
+                  );
+                  setSelectedStore(store ?? null);
+                }}
+                className={selectCls}
               >
-                <Plus className="h-4 w-4" />
-                Add Grid
+                <option value="">Select a store...</option>
+                {stores.map((s) => (
+                  <option key={`${s.groupId}::${s.storeId}`} value={`${s.groupId}::${s.storeId}`}>
+                    {s.groupName} — {s.storeName}
+                  </option>
+                ))}
+              </select>
+            </LabeledInput>
+
+            <LabeledInput label="Config Name">
+              <input
+                type="text"
+                value={config.name}
+                onChange={(e) => setConfig((prev) => ({ ...prev, name: e.target.value }))}
+                className={inputCls}
+                placeholder="Main Lot"
+              />
+            </LabeledInput>
+
+            {existingConfigs.length > 0 && (
+              <LabeledInput label={`Load Existing (${existingConfigs.length})`}>
+                <select
+                  value={config.id ?? ''}
+                  onChange={(e) => {
+                    const cfg = existingConfigs.find((c) => c.id === e.target.value);
+                    if (cfg) loadConfig(cfg);
+                  }}
+                  className={selectCls}
+                >
+                  <option value="">Select config...</option>
+                  {existingConfigs.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </LabeledInput>
+            )}
+          </Section>
+
+          {/* Map Settings */}
+          <Section title="Map Settings" icon={Settings2} defaultOpen={false}>
+            <div className="grid grid-cols-2 gap-2">
+              <LabeledInput label="Center Lat">
+                <input
+                  type="number"
+                  step="0.00001"
+                  value={config.center.latitude}
+                  onChange={(e) =>
+                    setConfig((prev) => ({
+                      ...prev,
+                      center: { ...prev.center, latitude: parseFloat(e.target.value) || 0 },
+                    }))
+                  }
+                  className={monoInputCls}
+                />
+              </LabeledInput>
+              <LabeledInput label="Center Lng">
+                <input
+                  type="number"
+                  step="0.00001"
+                  value={config.center.longitude}
+                  onChange={(e) =>
+                    setConfig((prev) => ({
+                      ...prev,
+                      center: { ...prev.center, longitude: parseFloat(e.target.value) || 0 },
+                    }))
+                  }
+                  className={monoInputCls}
+                />
+              </LabeledInput>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <LabeledInput label="Zoom">
+                <input
+                  type="number"
+                  min={1}
+                  max={22}
+                  value={config.zoom}
+                  onChange={(e) => setConfig((prev) => ({ ...prev, zoom: parseInt(e.target.value) || 19 }))}
+                  className={monoInputCls}
+                />
+              </LabeledInput>
+              <LabeledInput label="Bearing">
+                <input
+                  type="number"
+                  min={-360}
+                  max={360}
+                  value={config.bearing}
+                  onChange={(e) => setConfig((prev) => ({ ...prev, bearing: parseInt(e.target.value) || 0 }))}
+                  className={monoInputCls}
+                />
+              </LabeledInput>
+            </div>
+            {lastClickCoords && (
+              <button
+                onClick={() => {
+                  setConfig((prev) => ({
+                    ...prev,
+                    center: { latitude: lastClickCoords.lat, longitude: lastClickCoords.lng },
+                  }));
+                }}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--surface-overlay)] border border-[var(--rally-gold)]/30 text-[var(--rally-gold)] text-sm hover:bg-[var(--rally-gold)]/10 transition-colors w-full justify-center"
+              >
+                <MapPin className="h-4 w-4" />
+                Set Center to Clicked Point
               </button>
+            )}
+          </Section>
 
-              {/* Selected Grid Editor */}
-              {selectedGrid && (
-                <Card>
-                  <CardContent className="p-3 space-y-3">
-                    <h3 className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">
-                      Edit Grid
-                    </h3>
+          {/* Grids & Overlays Tabs */}
+          <div className="border border-[var(--surface-border)] rounded-lg overflow-hidden">
+            <div className="flex bg-[var(--surface-overlay)]">
+              <button
+                onClick={() => setPanel('grids')}
+                className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 text-sm font-medium transition-colors border-b-2 ${
+                  panel === 'grids'
+                    ? 'border-[var(--rally-gold)] text-[var(--rally-gold)] bg-[var(--rally-gold)]/5'
+                    : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                }`}
+              >
+                <Grid3X3 className="h-4 w-4" />
+                Grids ({config.grids.length})
+              </button>
+              <button
+                onClick={() => setPanel('overlays')}
+                className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 text-sm font-medium transition-colors border-b-2 ${
+                  panel === 'overlays'
+                    ? 'border-[var(--rally-gold)] text-[var(--rally-gold)] bg-[var(--rally-gold)]/5'
+                    : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                }`}
+              >
+                <ImageIcon className="h-4 w-4" />
+                Overlays ({config.imageOverlays.length})
+              </button>
+            </div>
 
-                    <div>
-                      <label className="block text-xs text-[var(--text-tertiary)] mb-1">Label</label>
-                      <input
-                        type="text"
-                        value={selectedGrid.label}
-                        onChange={(e) => updateGrid(selectedGrid.id, { label: e.target.value })}
-                        className="w-full px-2 py-1.5 rounded bg-[var(--surface-overlay)] border border-[var(--surface-border)] text-[var(--text-primary)] text-sm"
+            <div className="p-3 space-y-3">
+              {/* Grids Panel */}
+              {panel === 'grids' && (
+                <>
+                  {config.grids.length === 0 && (
+                    <p className="text-sm text-[var(--text-tertiary)] text-center py-4">
+                      No grids yet. Click the map to set an origin, then add a grid.
+                    </p>
+                  )}
+
+                  {config.grids.map((grid) => (
+                    <div
+                      key={grid.id}
+                      onClick={() => setSelectedGridId(grid.id === selectedGridId ? null : grid.id)}
+                      className={`flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer transition-colors ${
+                        grid.id === selectedGridId
+                          ? 'bg-[var(--rally-gold)]/10 border border-[var(--rally-gold)]/30'
+                          : 'bg-[var(--surface-base)] border border-[var(--surface-border)] hover:border-[var(--text-tertiary)]'
+                      }`}
+                    >
+                      <div
+                        className="h-3 w-3 rounded-sm flex-shrink-0 border border-white/20"
+                        style={{ backgroundColor: grid.color }}
                       />
+                      <span className="text-sm text-[var(--text-primary)] flex-1 truncate">
+                        {grid.label}
+                      </span>
+                      <Badge variant="default" size="sm">
+                        {grid.rows}×{grid.cols}
+                      </Badge>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          updateGrid(grid.id, { visible: !grid.visible });
+                        }}
+                        className="p-1 rounded hover:bg-[var(--surface-hover)]"
+                      >
+                        {grid.visible ? (
+                          <Eye className="h-4 w-4 text-[var(--text-secondary)]" />
+                        ) : (
+                          <EyeOff className="h-4 w-4 text-[var(--text-disabled)]" />
+                        )}
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeGrid(grid.id);
+                        }}
+                        className="p-1 rounded hover:bg-[var(--status-error)]/10"
+                      >
+                        <Trash2 className="h-4 w-4 text-[var(--status-error)]" />
+                      </button>
                     </div>
+                  ))}
 
-                    <div className="flex gap-2">
-                      <div className="flex-1">
-                        <label className="block text-xs text-[var(--text-tertiary)] mb-1">Type</label>
-                        <select
-                          value={selectedGrid.type}
-                          onChange={(e) =>
-                            updateGrid(selectedGrid.id, { type: e.target.value as GridType })
-                          }
-                          className="w-full px-2 py-1.5 rounded bg-[var(--surface-overlay)] border border-[var(--surface-border)] text-[var(--text-primary)] text-sm"
-                        >
-                          <option value="base">Base</option>
-                          <option value="sub">Sub</option>
-                        </select>
-                      </div>
-                      <div className="flex-1">
-                        <label className="block text-xs text-[var(--text-tertiary)] mb-1">Color</label>
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="color"
-                            value={selectedGrid.color}
-                            onChange={(e) => updateGrid(selectedGrid.id, { color: e.target.value })}
-                            className="h-8 w-8 rounded border border-[var(--surface-border)] cursor-pointer"
-                          />
+                  <button
+                    onClick={addGrid}
+                    className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-dashed border-[var(--surface-border)] text-[var(--text-secondary)] text-sm hover:border-[var(--rally-gold)] hover:text-[var(--rally-gold)] transition-colors w-full justify-center"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add Grid
+                  </button>
+
+                  {/* Selected Grid Editor */}
+                  {selectedGrid && (
+                    <Card>
+                      <CardContent className="p-3 space-y-3">
+                        <h3 className="text-xs font-semibold text-[var(--rally-gold)] uppercase tracking-wider">
+                          Edit: {selectedGrid.label}
+                        </h3>
+
+                        <LabeledInput label="Label">
                           <input
                             type="text"
-                            value={selectedGrid.color}
-                            onChange={(e) => updateGrid(selectedGrid.id, { color: e.target.value })}
-                            className="flex-1 px-2 py-1.5 rounded bg-[var(--surface-overlay)] border border-[var(--surface-border)] text-[var(--text-primary)] text-xs font-mono"
+                            value={selectedGrid.label}
+                            onChange={(e) => updateGrid(selectedGrid.id, { label: e.target.value })}
+                            className={inputCls}
                           />
+                        </LabeledInput>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <LabeledInput label="Type">
+                            <select
+                              value={selectedGrid.type}
+                              onChange={(e) =>
+                                updateGrid(selectedGrid.id, { type: e.target.value as GridType })
+                              }
+                              className={selectCls}
+                            >
+                              <option value="base">Base</option>
+                              <option value="sub">Sub</option>
+                            </select>
+                          </LabeledInput>
+                          <LabeledInput label="Color">
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="color"
+                                value={selectedGrid.color}
+                                onChange={(e) => updateGrid(selectedGrid.id, { color: e.target.value })}
+                                className="h-9 w-9 rounded-lg border border-[var(--surface-border)] cursor-pointer bg-transparent"
+                              />
+                              <input
+                                type="text"
+                                value={selectedGrid.color}
+                                onChange={(e) => updateGrid(selectedGrid.id, { color: e.target.value })}
+                                className={`flex-1 ${monoInputCls} text-xs`}
+                              />
+                            </div>
+                          </LabeledInput>
                         </div>
-                      </div>
-                    </div>
 
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-xs text-[var(--text-tertiary)] mb-1">Rows</label>
-                        <input
-                          type="number"
-                          min={1}
-                          max={200}
-                          value={selectedGrid.rows}
-                          onChange={(e) =>
-                            updateGrid(selectedGrid.id, { rows: parseInt(e.target.value) || 1 })
-                          }
-                          className="w-full px-2 py-1.5 rounded bg-[var(--surface-overlay)] border border-[var(--surface-border)] text-[var(--text-primary)] text-sm font-mono"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-[var(--text-tertiary)] mb-1">Cols</label>
-                        <input
-                          type="number"
-                          min={1}
-                          max={200}
-                          value={selectedGrid.cols}
-                          onChange={(e) =>
-                            updateGrid(selectedGrid.id, { cols: parseInt(e.target.value) || 1 })
-                          }
-                          className="w-full px-2 py-1.5 rounded bg-[var(--surface-overlay)] border border-[var(--surface-border)] text-[var(--text-primary)] text-sm font-mono"
-                        />
-                      </div>
-                    </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <LabeledInput label="Rows">
+                            <input
+                              type="number"
+                              min={1}
+                              max={200}
+                              value={selectedGrid.rows}
+                              onChange={(e) =>
+                                updateGrid(selectedGrid.id, { rows: parseInt(e.target.value) || 1 })
+                              }
+                              className={monoInputCls}
+                            />
+                          </LabeledInput>
+                          <LabeledInput label="Cols">
+                            <input
+                              type="number"
+                              min={1}
+                              max={200}
+                              value={selectedGrid.cols}
+                              onChange={(e) =>
+                                updateGrid(selectedGrid.id, { cols: parseInt(e.target.value) || 1 })
+                              }
+                              className={monoInputCls}
+                            />
+                          </LabeledInput>
+                        </div>
 
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-xs text-[var(--text-tertiary)] mb-1">Cell W (ft)</label>
-                        <input
-                          type="number"
-                          min={1}
-                          max={100}
-                          step={0.5}
-                          value={selectedGrid.cellWidthFt}
-                          onChange={(e) =>
-                            updateGrid(selectedGrid.id, { cellWidthFt: parseFloat(e.target.value) || 9 })
-                          }
-                          className="w-full px-2 py-1.5 rounded bg-[var(--surface-overlay)] border border-[var(--surface-border)] text-[var(--text-primary)] text-sm font-mono"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-[var(--text-tertiary)] mb-1">Cell H (ft)</label>
-                        <input
-                          type="number"
-                          min={1}
-                          max={100}
-                          step={0.5}
-                          value={selectedGrid.cellHeightFt}
-                          onChange={(e) =>
-                            updateGrid(selectedGrid.id, { cellHeightFt: parseFloat(e.target.value) || 18 })
-                          }
-                          className="w-full px-2 py-1.5 rounded bg-[var(--surface-overlay)] border border-[var(--surface-border)] text-[var(--text-primary)] text-sm font-mono"
-                        />
-                      </div>
-                    </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <LabeledInput label="Cell Width (ft)">
+                            <input
+                              type="number"
+                              min={1}
+                              max={100}
+                              step={0.5}
+                              value={selectedGrid.cellWidthFt}
+                              onChange={(e) =>
+                                updateGrid(selectedGrid.id, { cellWidthFt: parseFloat(e.target.value) || 9 })
+                              }
+                              className={monoInputCls}
+                            />
+                          </LabeledInput>
+                          <LabeledInput label="Cell Height (ft)">
+                            <input
+                              type="number"
+                              min={1}
+                              max={100}
+                              step={0.5}
+                              value={selectedGrid.cellHeightFt}
+                              onChange={(e) =>
+                                updateGrid(selectedGrid.id, { cellHeightFt: parseFloat(e.target.value) || 18 })
+                              }
+                              className={monoInputCls}
+                            />
+                          </LabeledInput>
+                        </div>
 
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-xs text-[var(--text-tertiary)] mb-1">Rotation°</label>
-                        <input
-                          type="number"
-                          min={-360}
-                          max={360}
-                          step={1}
-                          value={selectedGrid.rotationDeg}
-                          onChange={(e) =>
-                            updateGrid(selectedGrid.id, {
-                              rotationDeg: parseFloat(e.target.value) || 0,
-                            })
-                          }
-                          className="w-full px-2 py-1.5 rounded bg-[var(--surface-overlay)] border border-[var(--surface-border)] text-[var(--text-primary)] text-sm font-mono"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-[var(--text-tertiary)] mb-1">Opacity</label>
-                        <input
-                          type="range"
-                          min={0}
-                          max={1}
-                          step={0.05}
-                          value={selectedGrid.opacity}
-                          onChange={(e) =>
-                            updateGrid(selectedGrid.id, { opacity: parseFloat(e.target.value) })
-                          }
-                          className="w-full accent-[var(--rally-gold)]"
-                        />
-                      </div>
-                    </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <LabeledInput label="Rotation (deg)">
+                            <input
+                              type="number"
+                              min={-360}
+                              max={360}
+                              step={1}
+                              value={selectedGrid.rotationDeg}
+                              onChange={(e) =>
+                                updateGrid(selectedGrid.id, {
+                                  rotationDeg: parseFloat(e.target.value) || 0,
+                                })
+                              }
+                              className={monoInputCls}
+                            />
+                          </LabeledInput>
+                          <LabeledInput label="Opacity">
+                            <input
+                              type="range"
+                              min={0}
+                              max={1}
+                              step={0.05}
+                              value={selectedGrid.opacity}
+                              onChange={(e) =>
+                                updateGrid(selectedGrid.id, { opacity: parseFloat(e.target.value) })
+                              }
+                              className="w-full accent-[var(--rally-gold)] mt-2"
+                            />
+                          </LabeledInput>
+                        </div>
 
-                    {/* Origin */}
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="text-xs text-[var(--text-tertiary)]">Origin</label>
+                        {/* Origin */}
+                        <LabeledInput label="Origin">
+                          <div className="flex gap-2">
+                            <input
+                              type="number"
+                              step="0.00001"
+                              value={selectedGrid.origin.latitude}
+                              onChange={(e) =>
+                                updateGrid(selectedGrid.id, {
+                                  origin: {
+                                    ...selectedGrid.origin,
+                                    latitude: parseFloat(e.target.value) || 0,
+                                  },
+                                })
+                              }
+                              className={`flex-1 ${monoInputCls} text-xs`}
+                              placeholder="Lat"
+                            />
+                            <input
+                              type="number"
+                              step="0.00001"
+                              value={selectedGrid.origin.longitude}
+                              onChange={(e) =>
+                                updateGrid(selectedGrid.id, {
+                                  origin: {
+                                    ...selectedGrid.origin,
+                                    longitude: parseFloat(e.target.value) || 0,
+                                  },
+                                })
+                              }
+                              className={`flex-1 ${monoInputCls} text-xs`}
+                              placeholder="Lng"
+                            />
+                          </div>
+                        </LabeledInput>
+
                         {lastClickCoords && (
                           <button
                             onClick={() =>
@@ -782,372 +868,340 @@ export default function LotConfigPage() {
                                 },
                               })
                             }
-                            className="text-[10px] text-[var(--rally-gold)] hover:underline"
+                            className="text-xs text-[var(--rally-gold)] hover:underline"
                           >
-                            Use clicked point
+                            Use clicked point as origin
                           </button>
                         )}
-                      </div>
-                      <div className="flex gap-1">
-                        <input
-                          type="number"
-                          step="0.00001"
-                          value={selectedGrid.origin.latitude}
-                          onChange={(e) =>
-                            updateGrid(selectedGrid.id, {
-                              origin: {
-                                ...selectedGrid.origin,
-                                latitude: parseFloat(e.target.value) || 0,
-                              },
-                            })
-                          }
-                          className="flex-1 px-2 py-1 rounded bg-[var(--surface-overlay)] border border-[var(--surface-border)] text-[var(--text-primary)] text-xs font-mono"
-                          placeholder="Lat"
-                        />
-                        <input
-                          type="number"
-                          step="0.00001"
-                          value={selectedGrid.origin.longitude}
-                          onChange={(e) =>
-                            updateGrid(selectedGrid.id, {
-                              origin: {
-                                ...selectedGrid.origin,
-                                longitude: parseFloat(e.target.value) || 0,
-                              },
-                            })
-                          }
-                          className="flex-1 px-2 py-1 rounded bg-[var(--surface-overlay)] border border-[var(--surface-border)] text-[var(--text-primary)] text-xs font-mono"
-                          placeholder="Lng"
-                        />
-                      </div>
-                    </div>
 
-                    {/* Cell count */}
-                    <div className="text-xs text-[var(--text-tertiary)] text-center pt-1 border-t border-[var(--surface-border)]">
-                      {selectedGrid.rows * selectedGrid.cols} cells ·{' '}
-                      {(selectedGrid.rows * selectedGrid.cellHeightFt).toFixed(0)}ft ×{' '}
-                      {(selectedGrid.cols * selectedGrid.cellWidthFt).toFixed(0)}ft
-                    </div>
-                  </CardContent>
-                </Card>
+                        <div className="text-xs text-[var(--text-tertiary)] text-center pt-2 border-t border-[var(--surface-border)]">
+                          {selectedGrid.rows * selectedGrid.cols} cells ·{' '}
+                          {(selectedGrid.rows * selectedGrid.cellHeightFt).toFixed(0)}ft ×{' '}
+                          {(selectedGrid.cols * selectedGrid.cellWidthFt).toFixed(0)}ft
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </>
               )}
-            </>
-          )}
 
-          {/* Overlays Panel */}
-          {panel === 'overlays' && (
-            <>
-              {/* Overlay List */}
-              <div className="space-y-1">
-                {config.imageOverlays.map((overlay) => (
-                  <div
-                    key={overlay.id}
-                    onClick={() =>
-                      setSelectedOverlayId(
-                        overlay.id === selectedOverlayId ? null : overlay.id,
-                      )
-                    }
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors ${
-                      overlay.id === selectedOverlayId
-                        ? 'bg-[var(--rally-gold)]/10 border border-[var(--rally-gold)]/30'
-                        : 'bg-[var(--surface-overlay)] border border-[var(--surface-border)] hover:border-[var(--surface-hover)]'
-                    }`}
-                  >
-                    <ImageIcon className="h-3.5 w-3.5 text-[var(--text-secondary)]" />
-                    <span className="text-sm text-[var(--text-primary)] flex-1 truncate">
-                      {overlay.label}
-                    </span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeOverlay(overlay.id);
-                      }}
-                      className="p-1 rounded hover:bg-[var(--status-error)]/10"
+              {/* Overlays Panel */}
+              {panel === 'overlays' && (
+                <>
+                  {config.imageOverlays.length === 0 && (
+                    <p className="text-sm text-[var(--text-tertiary)] text-center py-4">
+                      No overlays yet. Add an aerial photo overlay.
+                    </p>
+                  )}
+
+                  {config.imageOverlays.map((overlay) => (
+                    <div
+                      key={overlay.id}
+                      onClick={() =>
+                        setSelectedOverlayId(
+                          overlay.id === selectedOverlayId ? null : overlay.id,
+                        )
+                      }
+                      className={`flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer transition-colors ${
+                        overlay.id === selectedOverlayId
+                          ? 'bg-[var(--rally-gold)]/10 border border-[var(--rally-gold)]/30'
+                          : 'bg-[var(--surface-base)] border border-[var(--surface-border)] hover:border-[var(--text-tertiary)]'
+                      }`}
                     >
-                      <Trash2 className="h-3.5 w-3.5 text-[var(--status-error)]" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              {/* Add Overlay */}
-              <button
-                onClick={addOverlay}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-[var(--surface-border)] text-[var(--text-secondary)] text-sm hover:border-[var(--rally-gold)] hover:text-[var(--rally-gold)] transition-colors"
-              >
-                <Plus className="h-4 w-4" />
-                Add Image Overlay
-              </button>
-
-              {/* Selected Overlay Editor */}
-              {selectedOverlay && (
-                <Card>
-                  <CardContent className="p-3 space-y-3">
-                    <h3 className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">
-                      Edit Overlay
-                    </h3>
-
-                    <div>
-                      <label className="block text-xs text-[var(--text-tertiary)] mb-1">Label</label>
-                      <input
-                        type="text"
-                        value={selectedOverlay.label}
-                        onChange={(e) =>
-                          updateOverlay(selectedOverlay.id, { label: e.target.value })
-                        }
-                        className="w-full px-2 py-1.5 rounded bg-[var(--surface-overlay)] border border-[var(--surface-border)] text-[var(--text-primary)] text-sm"
-                      />
+                      <ImageIcon className="h-4 w-4 text-[var(--text-secondary)]" />
+                      <span className="text-sm text-[var(--text-primary)] flex-1 truncate">
+                        {overlay.label}
+                      </span>
+                      <span className="text-xs text-[var(--text-tertiary)] font-mono">
+                        {(overlay.opacity * 100).toFixed(0)}%
+                      </span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeOverlay(overlay.id);
+                        }}
+                        className="p-1 rounded hover:bg-[var(--status-error)]/10"
+                      >
+                        <Trash2 className="h-4 w-4 text-[var(--status-error)]" />
+                      </button>
                     </div>
+                  ))}
 
-                    <div>
-                      <label className="block text-xs text-[var(--text-tertiary)] mb-1">Image URL</label>
-                      <input
-                        type="url"
-                        value={selectedOverlay.imageUrl}
-                        onChange={(e) =>
-                          updateOverlay(selectedOverlay.id, { imageUrl: e.target.value })
-                        }
-                        className="w-full px-2 py-1.5 rounded bg-[var(--surface-overlay)] border border-[var(--surface-border)] text-[var(--text-primary)] text-sm font-mono"
-                        placeholder="https://..."
-                      />
-                    </div>
+                  <button
+                    onClick={addOverlay}
+                    className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-dashed border-[var(--surface-border)] text-[var(--text-secondary)] text-sm hover:border-[var(--rally-gold)] hover:text-[var(--rally-gold)] transition-colors w-full justify-center"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add Image Overlay
+                  </button>
 
-                    {/* Tool Tabs */}
-                    <div className="flex gap-1">
-                      {OVERLAY_TOOLS.map((tool) => (
-                        <button
-                          key={tool.id}
-                          onClick={() => setActiveTool(tool.id)}
-                          className={`flex-1 flex items-center justify-center p-1.5 rounded text-xs transition-colors ${
-                            activeTool === tool.id
-                              ? 'bg-[var(--rally-gold)] text-black'
-                              : 'bg-[var(--surface-overlay)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                          }`}
-                          title={tool.label}
-                        >
-                          <tool.icon className="h-3.5 w-3.5" />
-                        </button>
-                      ))}
-                    </div>
+                  {/* Selected Overlay Editor */}
+                  {selectedOverlay && (
+                    <Card>
+                      <CardContent className="p-3 space-y-3">
+                        <h3 className="text-xs font-semibold text-[var(--rally-gold)] uppercase tracking-wider">
+                          Edit: {selectedOverlay.label}
+                        </h3>
 
-                    {/* Tool Controls */}
-                    {activeTool === 'opacity' && (
-                      <div>
-                        <div className="flex justify-between text-xs text-[var(--text-tertiary)] mb-1">
-                          <span>Opacity</span>
-                          <span className="font-mono">{(selectedOverlay.opacity * 100).toFixed(0)}%</span>
-                        </div>
-                        <input
-                          type="range"
-                          min={0}
-                          max={1}
-                          step={0.05}
-                          value={selectedOverlay.opacity}
-                          onChange={(e) =>
-                            updateOverlay(selectedOverlay.id, {
-                              opacity: parseFloat(e.target.value),
-                            })
-                          }
-                          className="w-full accent-[var(--rally-gold)]"
-                        />
-                      </div>
-                    )}
-
-                    {activeTool === 'scale' && (
-                      <div>
-                        <div className="flex justify-between text-xs text-[var(--text-tertiary)] mb-1">
-                          <span>Scale</span>
-                          <span className="font-mono">{selectedOverlay.scale.toFixed(2)}×</span>
-                        </div>
-                        <input
-                          type="range"
-                          min={0.1}
-                          max={3}
-                          step={0.01}
-                          value={selectedOverlay.scale}
-                          onChange={(e) =>
-                            updateOverlay(selectedOverlay.id, {
-                              scale: parseFloat(e.target.value),
-                            })
-                          }
-                          className="w-full accent-[var(--rally-gold)]"
-                        />
-                      </div>
-                    )}
-
-                    {activeTool === 'rotation' && (
-                      <div>
-                        <div className="flex justify-between text-xs text-[var(--text-tertiary)] mb-1">
-                          <span>Rotation</span>
-                          <span className="font-mono">{selectedOverlay.rotationDeg.toFixed(1)}°</span>
-                        </div>
-                        <input
-                          type="range"
-                          min={-180}
-                          max={180}
-                          step={0.5}
-                          value={selectedOverlay.rotationDeg}
-                          onChange={(e) =>
-                            updateOverlay(selectedOverlay.id, {
-                              rotationDeg: parseFloat(e.target.value),
-                            })
-                          }
-                          className="w-full accent-[var(--rally-gold)]"
-                        />
-                      </div>
-                    )}
-
-                    {activeTool === 'position' && (
-                      <div className="space-y-2">
-                        <div>
-                          <div className="flex justify-between text-xs text-[var(--text-tertiary)] mb-1">
-                            <span>Offset X (m)</span>
-                            <span className="font-mono">{selectedOverlay.offsetX.toFixed(1)}</span>
-                          </div>
+                        <LabeledInput label="Label">
                           <input
-                            type="range"
-                            min={-200}
-                            max={200}
-                            step={0.5}
-                            value={selectedOverlay.offsetX}
+                            type="text"
+                            value={selectedOverlay.label}
                             onChange={(e) =>
-                              updateOverlay(selectedOverlay.id, {
-                                offsetX: parseFloat(e.target.value),
-                              })
+                              updateOverlay(selectedOverlay.id, { label: e.target.value })
                             }
-                            className="w-full accent-[var(--rally-gold)]"
+                            className={inputCls}
                           />
-                        </div>
-                        <div>
-                          <div className="flex justify-between text-xs text-[var(--text-tertiary)] mb-1">
-                            <span>Offset Y (m)</span>
-                            <span className="font-mono">{selectedOverlay.offsetY.toFixed(1)}</span>
-                          </div>
+                        </LabeledInput>
+
+                        <LabeledInput label="Image URL">
                           <input
-                            type="range"
-                            min={-200}
-                            max={200}
-                            step={0.5}
-                            value={selectedOverlay.offsetY}
+                            type="url"
+                            value={selectedOverlay.imageUrl}
                             onChange={(e) =>
-                              updateOverlay(selectedOverlay.id, {
-                                offsetY: parseFloat(e.target.value),
-                              })
+                              updateOverlay(selectedOverlay.id, { imageUrl: e.target.value })
                             }
-                            className="w-full accent-[var(--rally-gold)]"
+                            className={monoInputCls}
+                            placeholder="https://... or /lot-overlay.jpg"
                           />
+                        </LabeledInput>
+
+                        {/* Tool Tabs */}
+                        <div className="flex gap-1 bg-[var(--surface-base)] rounded-lg p-1">
+                          {OVERLAY_TOOLS.map((tool) => (
+                            <button
+                              key={tool.id}
+                              onClick={() => setActiveTool(tool.id)}
+                              className={`flex-1 flex flex-col items-center gap-0.5 p-2 rounded-md text-xs transition-colors ${
+                                activeTool === tool.id
+                                  ? 'bg-[var(--rally-gold)] text-black font-medium'
+                                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
+                              }`}
+                              title={tool.label}
+                            >
+                              <tool.icon className="h-4 w-4" />
+                              <span className="text-[10px]">{tool.label}</span>
+                            </button>
+                          ))}
                         </div>
-                      </div>
-                    )}
 
-                    {activeTool === 'flip' && (
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() =>
-                            updateOverlay(selectedOverlay.id, {
-                              flipHorizontal: !selectedOverlay.flipHorizontal,
-                            })
-                          }
-                          className={`flex-1 flex items-center justify-center gap-1.5 p-2 rounded-lg border text-xs font-medium transition-colors ${
-                            selectedOverlay.flipHorizontal
-                              ? 'bg-[var(--rally-gold)]/10 border-[var(--rally-gold)]/30 text-[var(--rally-gold)]'
-                              : 'bg-[var(--surface-overlay)] border-[var(--surface-border)] text-[var(--text-secondary)]'
-                          }`}
-                        >
-                          <FlipHorizontal className="h-4 w-4" />
-                          H-Flip
-                        </button>
-                        <button
-                          onClick={() =>
-                            updateOverlay(selectedOverlay.id, {
-                              flipVertical: !selectedOverlay.flipVertical,
-                            })
-                          }
-                          className={`flex-1 flex items-center justify-center gap-1.5 p-2 rounded-lg border text-xs font-medium transition-colors ${
-                            selectedOverlay.flipVertical
-                              ? 'bg-[var(--rally-gold)]/10 border-[var(--rally-gold)]/30 text-[var(--rally-gold)]'
-                              : 'bg-[var(--surface-overlay)] border-[var(--surface-border)] text-[var(--text-secondary)]'
-                          }`}
-                        >
-                          <FlipVertical className="h-4 w-4" />
-                          V-Flip
-                        </button>
-                      </div>
-                    )}
+                        {/* Tool Controls */}
+                        {activeTool === 'opacity' && (
+                          <div>
+                            <div className="flex justify-between text-xs text-[var(--text-secondary)] mb-1">
+                              <span>Opacity</span>
+                              <span className="font-mono text-[var(--text-primary)]">{(selectedOverlay.opacity * 100).toFixed(0)}%</span>
+                            </div>
+                            <input
+                              type="range"
+                              min={0}
+                              max={1}
+                              step={0.05}
+                              value={selectedOverlay.opacity}
+                              onChange={(e) =>
+                                updateOverlay(selectedOverlay.id, {
+                                  opacity: parseFloat(e.target.value),
+                                })
+                              }
+                              className="w-full accent-[var(--rally-gold)]"
+                            />
+                          </div>
+                        )}
 
-                    {/* Bounds */}
-                    <div>
-                      <label className="text-xs text-[var(--text-tertiary)] mb-1 block">
-                        Bounds (SW → NE)
-                      </label>
-                      <div className="grid grid-cols-2 gap-1 text-xs">
-                        <input
-                          type="number"
-                          step="0.00001"
-                          value={selectedOverlay.bounds[0].latitude}
-                          onChange={(e) => {
-                            const newBounds = [...selectedOverlay.bounds] as [GeoPoint, GeoPoint];
-                            newBounds[0] = {
-                              ...newBounds[0],
-                              latitude: parseFloat(e.target.value) || 0,
-                            };
-                            updateOverlay(selectedOverlay.id, { bounds: newBounds });
-                          }}
-                          className="px-2 py-1 rounded bg-[var(--surface-overlay)] border border-[var(--surface-border)] text-[var(--text-primary)] font-mono"
-                          placeholder="SW Lat"
-                        />
-                        <input
-                          type="number"
-                          step="0.00001"
-                          value={selectedOverlay.bounds[0].longitude}
-                          onChange={(e) => {
-                            const newBounds = [...selectedOverlay.bounds] as [GeoPoint, GeoPoint];
-                            newBounds[0] = {
-                              ...newBounds[0],
-                              longitude: parseFloat(e.target.value) || 0,
-                            };
-                            updateOverlay(selectedOverlay.id, { bounds: newBounds });
-                          }}
-                          className="px-2 py-1 rounded bg-[var(--surface-overlay)] border border-[var(--surface-border)] text-[var(--text-primary)] font-mono"
-                          placeholder="SW Lng"
-                        />
-                        <input
-                          type="number"
-                          step="0.00001"
-                          value={selectedOverlay.bounds[1].latitude}
-                          onChange={(e) => {
-                            const newBounds = [...selectedOverlay.bounds] as [GeoPoint, GeoPoint];
-                            newBounds[1] = {
-                              ...newBounds[1],
-                              latitude: parseFloat(e.target.value) || 0,
-                            };
-                            updateOverlay(selectedOverlay.id, { bounds: newBounds });
-                          }}
-                          className="px-2 py-1 rounded bg-[var(--surface-overlay)] border border-[var(--surface-border)] text-[var(--text-primary)] font-mono"
-                          placeholder="NE Lat"
-                        />
-                        <input
-                          type="number"
-                          step="0.00001"
-                          value={selectedOverlay.bounds[1].longitude}
-                          onChange={(e) => {
-                            const newBounds = [...selectedOverlay.bounds] as [GeoPoint, GeoPoint];
-                            newBounds[1] = {
-                              ...newBounds[1],
-                              longitude: parseFloat(e.target.value) || 0,
-                            };
-                            updateOverlay(selectedOverlay.id, { bounds: newBounds });
-                          }}
-                          className="px-2 py-1 rounded bg-[var(--surface-overlay)] border border-[var(--surface-border)] text-[var(--text-primary)] font-mono"
-                          placeholder="NE Lng"
-                        />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                        {activeTool === 'scale' && (
+                          <div>
+                            <div className="flex justify-between text-xs text-[var(--text-secondary)] mb-1">
+                              <span>Scale</span>
+                              <span className="font-mono text-[var(--text-primary)]">{selectedOverlay.scale.toFixed(2)}×</span>
+                            </div>
+                            <input
+                              type="range"
+                              min={0.1}
+                              max={3}
+                              step={0.01}
+                              value={selectedOverlay.scale}
+                              onChange={(e) =>
+                                updateOverlay(selectedOverlay.id, {
+                                  scale: parseFloat(e.target.value),
+                                })
+                              }
+                              className="w-full accent-[var(--rally-gold)]"
+                            />
+                          </div>
+                        )}
+
+                        {activeTool === 'rotation' && (
+                          <div>
+                            <div className="flex justify-between text-xs text-[var(--text-secondary)] mb-1">
+                              <span>Rotation</span>
+                              <span className="font-mono text-[var(--text-primary)]">{selectedOverlay.rotationDeg.toFixed(1)}°</span>
+                            </div>
+                            <input
+                              type="range"
+                              min={-180}
+                              max={180}
+                              step={0.5}
+                              value={selectedOverlay.rotationDeg}
+                              onChange={(e) =>
+                                updateOverlay(selectedOverlay.id, {
+                                  rotationDeg: parseFloat(e.target.value),
+                                })
+                              }
+                              className="w-full accent-[var(--rally-gold)]"
+                            />
+                          </div>
+                        )}
+
+                        {activeTool === 'position' && (
+                          <div className="space-y-2">
+                            <div>
+                              <div className="flex justify-between text-xs text-[var(--text-secondary)] mb-1">
+                                <span>Offset X (meters)</span>
+                                <span className="font-mono text-[var(--text-primary)]">{selectedOverlay.offsetX.toFixed(1)}m</span>
+                              </div>
+                              <input
+                                type="range"
+                                min={-200}
+                                max={200}
+                                step={0.5}
+                                value={selectedOverlay.offsetX}
+                                onChange={(e) =>
+                                  updateOverlay(selectedOverlay.id, {
+                                    offsetX: parseFloat(e.target.value),
+                                  })
+                                }
+                                className="w-full accent-[var(--rally-gold)]"
+                              />
+                            </div>
+                            <div>
+                              <div className="flex justify-between text-xs text-[var(--text-secondary)] mb-1">
+                                <span>Offset Y (meters)</span>
+                                <span className="font-mono text-[var(--text-primary)]">{selectedOverlay.offsetY.toFixed(1)}m</span>
+                              </div>
+                              <input
+                                type="range"
+                                min={-200}
+                                max={200}
+                                step={0.5}
+                                value={selectedOverlay.offsetY}
+                                onChange={(e) =>
+                                  updateOverlay(selectedOverlay.id, {
+                                    offsetY: parseFloat(e.target.value),
+                                  })
+                                }
+                                className="w-full accent-[var(--rally-gold)]"
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {activeTool === 'flip' && (
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() =>
+                                updateOverlay(selectedOverlay.id, {
+                                  flipHorizontal: !selectedOverlay.flipHorizontal,
+                                })
+                              }
+                              className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border text-sm font-medium transition-colors ${
+                                selectedOverlay.flipHorizontal
+                                  ? 'bg-[var(--rally-gold)]/10 border-[var(--rally-gold)]/30 text-[var(--rally-gold)]'
+                                  : 'bg-[var(--surface-base)] border-[var(--surface-border)] text-[var(--text-secondary)]'
+                              }`}
+                            >
+                              <FlipHorizontal className="h-4 w-4" />
+                              H-Flip
+                            </button>
+                            <button
+                              onClick={() =>
+                                updateOverlay(selectedOverlay.id, {
+                                  flipVertical: !selectedOverlay.flipVertical,
+                                })
+                              }
+                              className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border text-sm font-medium transition-colors ${
+                                selectedOverlay.flipVertical
+                                  ? 'bg-[var(--rally-gold)]/10 border-[var(--rally-gold)]/30 text-[var(--rally-gold)]'
+                                  : 'bg-[var(--surface-base)] border-[var(--surface-border)] text-[var(--text-secondary)]'
+                              }`}
+                            >
+                              <FlipVertical className="h-4 w-4" />
+                              V-Flip
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Bounds */}
+                        <LabeledInput label="Bounds (SW → NE)">
+                          <div className="grid grid-cols-2 gap-2">
+                            <input
+                              type="number"
+                              step="0.00001"
+                              value={selectedOverlay.bounds[0].latitude}
+                              onChange={(e) => {
+                                const newBounds = [...selectedOverlay.bounds] as [GeoPoint, GeoPoint];
+                                newBounds[0] = {
+                                  ...newBounds[0],
+                                  latitude: parseFloat(e.target.value) || 0,
+                                };
+                                updateOverlay(selectedOverlay.id, { bounds: newBounds });
+                              }}
+                              className={`${monoInputCls} text-xs`}
+                              placeholder="SW Lat"
+                            />
+                            <input
+                              type="number"
+                              step="0.00001"
+                              value={selectedOverlay.bounds[0].longitude}
+                              onChange={(e) => {
+                                const newBounds = [...selectedOverlay.bounds] as [GeoPoint, GeoPoint];
+                                newBounds[0] = {
+                                  ...newBounds[0],
+                                  longitude: parseFloat(e.target.value) || 0,
+                                };
+                                updateOverlay(selectedOverlay.id, { bounds: newBounds });
+                              }}
+                              className={`${monoInputCls} text-xs`}
+                              placeholder="SW Lng"
+                            />
+                            <input
+                              type="number"
+                              step="0.00001"
+                              value={selectedOverlay.bounds[1].latitude}
+                              onChange={(e) => {
+                                const newBounds = [...selectedOverlay.bounds] as [GeoPoint, GeoPoint];
+                                newBounds[1] = {
+                                  ...newBounds[1],
+                                  latitude: parseFloat(e.target.value) || 0,
+                                };
+                                updateOverlay(selectedOverlay.id, { bounds: newBounds });
+                              }}
+                              className={`${monoInputCls} text-xs`}
+                              placeholder="NE Lat"
+                            />
+                            <input
+                              type="number"
+                              step="0.00001"
+                              value={selectedOverlay.bounds[1].longitude}
+                              onChange={(e) => {
+                                const newBounds = [...selectedOverlay.bounds] as [GeoPoint, GeoPoint];
+                                newBounds[1] = {
+                                  ...newBounds[1],
+                                  longitude: parseFloat(e.target.value) || 0,
+                                };
+                                updateOverlay(selectedOverlay.id, { bounds: newBounds });
+                              }}
+                              className={`${monoInputCls} text-xs`}
+                              placeholder="NE Lng"
+                            />
+                          </div>
+                        </LabeledInput>
+                      </CardContent>
+                    </Card>
+                  )}
+                </>
               )}
-            </>
-          )}
+            </div>
+          </div>
         </div>
       </div>
     </div>

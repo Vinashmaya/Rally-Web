@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { authFetch } from '@rally/firebase';
 import {
   Card,
   CardHeader,
@@ -174,7 +175,7 @@ export default function SystemHealthPage() {
 
   useEffect(() => {
     setLoading(true);
-    fetch('/api/admin/system/health')
+    authFetch('/api/admin/system/health')
       .then((res) => res.json())
       .then((data: HealthResponse) => {
         if (data.data) {
@@ -197,7 +198,7 @@ export default function SystemHealthPage() {
 
   const handleMaintenanceToggle = useCallback(() => {
     const newState = !maintenanceMode;
-    fetch('/api/admin/system/health', {
+    authFetch('/api/admin/system/health', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'maintenance', enabled: newState }),
@@ -226,7 +227,7 @@ export default function SystemHealthPage() {
     (processName: string) => {
       if (confirmingAction === processName) {
         setConfirmingAction(null);
-        fetch('/api/admin/system/health', {
+        authFetch('/api/admin/system/health', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'restart', process: processName }),
@@ -260,7 +261,7 @@ export default function SystemHealthPage() {
       const stopKey = `stop-${processName}`;
       if (confirmingAction === stopKey) {
         setConfirmingAction(null);
-        fetch('/api/admin/system/health', {
+        authFetch('/api/admin/system/health', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'stop', process: processName }),
@@ -293,7 +294,7 @@ export default function SystemHealthPage() {
       toast({ type: 'error', title: 'Error', description: 'Message cannot be empty.' });
       return;
     }
-    fetch('/api/admin/system/health', {
+    authFetch('/api/admin/system/health', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'broadcast', message: broadcastMessage.trim() }),

@@ -32,6 +32,7 @@ import {
   useAllUsers,
   useAllVehicles,
   useAuditLog,
+  authFetch,
 } from '@rally/firebase';
 
 // ---------------------------------------------------------------------------
@@ -116,7 +117,7 @@ export default function AdminDashboardPage() {
   const [healthLoading, setHealthLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/admin/system/health')
+    authFetch('/api/admin/system/health')
       .then((res) => res.json())
       .then((data) => {
         if (data.health) {

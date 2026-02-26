@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
+import { authFetch } from '@rally/firebase';
 import {
   Card,
   CardHeader,
@@ -82,7 +83,7 @@ export default function DnsPage() {
 
   const fetchRecords = useCallback(() => {
     setLoading(true);
-    fetch('/api/admin/dns')
+    authFetch('/api/admin/dns')
       .then((res) => res.json())
       .then((data: { success?: boolean; data?: DnsRecord[] }) => {
         if (data.data) setRecords(data.data);
@@ -174,7 +175,7 @@ export default function DnsPage() {
     const content = window.prompt('IP address (e.g. 74.208.123.209):', '74.208.123.209');
     if (!content) return;
 
-    fetch('/api/admin/dns', {
+    authFetch('/api/admin/dns', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, content }),

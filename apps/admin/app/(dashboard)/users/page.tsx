@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
+import { authFetch } from '@rally/firebase';
 import {
   Badge,
   Card,
@@ -291,7 +292,7 @@ export default function SystemUsersPage() {
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    fetch('/api/admin/users')
+    authFetch('/api/admin/users')
       .then((res) => res.json())
       .then((json: { success?: boolean; data?: ApiUser[]; error?: string }) => {
         if (json.success && json.data) {

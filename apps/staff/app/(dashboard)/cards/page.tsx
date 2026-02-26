@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
+import { authFetch } from '@rally/firebase';
 import {
   CreditCard,
   Wallet,
@@ -193,7 +194,7 @@ export default function CardsPage() {
 
   const handleAddToWallet = async () => {
     try {
-      const response = await fetch('/api/wallet/generate-pass', {
+      const response = await authFetch('/api/wallet/generate-pass', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

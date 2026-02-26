@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { authFetch } from '@rally/firebase';
 import {
   Sparkles,
   Send,
@@ -204,7 +205,7 @@ export default function AIPage() {
     setIsTyping(true);
 
     try {
-      const res = await fetch('/api/ai/chat', {
+      const res = await authFetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

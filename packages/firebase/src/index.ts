@@ -6,3 +6,4 @@ export * from './types';
 export * from './hooks';
 export * from './converters';
 export * from './mutations';
+export { authFetch } from './authFetch';

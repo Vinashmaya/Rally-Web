@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { authFetch } from '@rally/firebase';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -218,7 +219,7 @@ export default function TenantCreatePage() {
       setProvisionSteps([...steps]);
 
       try {
-        const res = await fetch('/api/admin/tenants/provision', {
+        const res = await authFetch('/api/admin/tenants/provision', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

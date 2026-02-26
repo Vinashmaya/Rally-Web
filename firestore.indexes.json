@@ -104,21 +104,8 @@
       "collectionGroup": "memberships",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
-        { "fieldPath": "joinedAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "vehicleActivities",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        { "fieldPath": "startedAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "vehicles",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        { "fieldPath": "stockNumber", "order": "ASCENDING" }
+        { "fieldPath": "employeeUid", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
       ]
     }
   ],

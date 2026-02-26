@@ -1,6 +1,12 @@
 // Server-only auth verification for API route handlers
 // Uses the lazy-init Firebase Admin SDK from ./admin.ts
 // Never imported in client components — guarded by 'server-only'
+//
+// Dual-auth strategy:
+//   1. Try __session cookie (set via /api/auth/session POST)
+//   2. Fall back to Authorization: Bearer <idToken> header
+// The bearer fallback ensures API routes work even when Cloudflare's
+// proxy strips Set-Cookie headers from origin responses.
 
 import 'server-only';
 
@@ -30,9 +36,6 @@ export interface VerifiedSession {
 
 async function getSessionCookie(): Promise<string | undefined> {
   try {
-    // Dynamic import — resolved at runtime by the Next.js app, not at
-    // package type-check time. This avoids "Cannot find module 'next/headers'"
-    // errors when building from the shared @rally/firebase package.
     const { cookies } = await import(/* webpackIgnore: true */ 'next/headers');
     const cookieStore = await cookies();
     return cookieStore.get('__session')?.value;
@@ -42,48 +45,85 @@ async function getSessionCookie(): Promise<string | undefined> {
 }
 
 // ---------------------------------------------------------------------------
-// Core: verify __session cookie → decoded token + claims
-// Uses verifySessionCookie (not verifyIdToken) because the session route
-// creates a proper Firebase session cookie via createSessionCookie().
-// The `true` flag enables revocation checking — if the user's refresh
-// tokens are revoked (password change, account disable), the session
-// cookie is immediately invalidated.
+// Bearer token extraction from Authorization header
+// ---------------------------------------------------------------------------
+
+async function getBearerToken(): Promise<string | undefined> {
+  try {
+    const { headers } = await import(/* webpackIgnore: true */ 'next/headers');
+    const headerStore = await headers();
+    const auth = headerStore.get('authorization');
+    if (auth?.startsWith('Bearer ')) {
+      return auth.slice(7);
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Core: verify session via cookie OR bearer token → decoded token + claims
+//
+// Priority: session cookie (verifySessionCookie) > bearer (verifyIdToken)
+// Session cookies are preferred because they support revocation checking.
+// Bearer tokens are the fallback when Set-Cookie is stripped by CDN/proxy.
 // ---------------------------------------------------------------------------
 
 export async function verifySession(): Promise<VerifiedSession | null> {
+  // --- Attempt 1: session cookie ---
   try {
     const sessionCookie = await getSessionCookie();
-
-    if (!sessionCookie) return null;
-
-    const token = await getAdminAuth().verifySessionCookie(sessionCookie, true);
-
-    const claims = token as DecodedIdToken & {
-      groupId?: string;
-      dealershipId?: string;
-      role?: string;
-    };
-
-    const role = claims.role && (USER_ROLE_VALUES as readonly string[]).includes(claims.role)
-      ? (claims.role as UserRole)
-      : null;
-
-    const superAdminUids = (process.env.SUPER_ADMIN_UIDS ?? '')
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-    return {
-      token,
-      uid: token.uid,
-      role,
-      groupId: claims.groupId ?? null,
-      dealershipId: claims.dealershipId ?? null,
-      isSuperAdmin: superAdminUids.includes(token.uid),
-    };
+    if (sessionCookie) {
+      const token = await getAdminAuth().verifySessionCookie(sessionCookie, true);
+      return buildSession(token);
+    }
   } catch {
-    return null;
+    // Cookie present but invalid — fall through to bearer
   }
+
+  // --- Attempt 2: Authorization bearer token ---
+  try {
+    const bearerToken = await getBearerToken();
+    if (bearerToken) {
+      const token = await getAdminAuth().verifyIdToken(bearerToken, true);
+      return buildSession(token);
+    }
+  } catch {
+    // Bearer present but invalid
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Shared: build VerifiedSession from a decoded token
+// ---------------------------------------------------------------------------
+
+function buildSession(token: DecodedIdToken): VerifiedSession {
+  const claims = token as DecodedIdToken & {
+    groupId?: string;
+    dealershipId?: string;
+    role?: string;
+  };
+
+  const role = claims.role && (USER_ROLE_VALUES as readonly string[]).includes(claims.role)
+    ? (claims.role as UserRole)
+    : null;
+
+  const superAdminUids = (process.env.SUPER_ADMIN_UIDS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  return {
+    token,
+    uid: token.uid,
+    role,
+    groupId: claims.groupId ?? null,
+    dealershipId: claims.dealershipId ?? null,
+    isSuperAdmin: superAdminUids.includes(token.uid),
+  };
 }
 
 // ---------------------------------------------------------------------------

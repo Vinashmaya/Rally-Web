@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import { authFetch } from '@rally/firebase';
 import {
   Card,
   CardHeader,
@@ -375,7 +376,7 @@ export default function FeatureFlagsPage() {
             const description = window.prompt('Flag description:') ?? '';
             const id = key.replace(/\s+/g, '_').toLowerCase();
 
-            fetch('/api/admin/feature-flags', {
+            authFetch('/api/admin/feature-flags', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ id, name: key, enabled: false, description }),

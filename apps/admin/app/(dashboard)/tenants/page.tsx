@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { authFetch } from '@rally/firebase';
 import {
   Card,
   CardContent,
@@ -202,7 +203,7 @@ export default function TenantsListPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/admin/tenants')
+    authFetch('/api/admin/tenants')
       .then((res) => res.json())
       .then((json) => {
         if (json.success && json.data) {
@@ -229,7 +230,7 @@ export default function TenantsListPage() {
   const handleTenantAction = useCallback(
     async (tenantId: string, action: 'suspend' | 'activate' | 'deprovision') => {
       try {
-        const res = await fetch(`/api/admin/tenants/${tenantId}/${action}`, {
+        const res = await authFetch(`/api/admin/tenants/${tenantId}/${action}`, {
           method: 'POST',
         });
 

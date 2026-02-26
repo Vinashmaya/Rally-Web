@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { authFetch } from '@rally/firebase';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -161,7 +162,7 @@ export default function InviteUserPage() {
     }
 
     try {
-      const response = await fetch('/api/users/invite', {
+      const response = await authFetch('/api/users/invite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

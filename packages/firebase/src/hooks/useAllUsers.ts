@@ -5,7 +5,6 @@
 // Supports client-side search and role filtering
 
 import { useMemo } from 'react';
-import { orderBy, type QueryConstraint } from 'firebase/firestore';
 import { useCollectionGroup } from './useFirestore';
 import type { StoreMembership } from '../types/tenant';
 
@@ -23,25 +22,23 @@ interface UseAllUsersReturn {
 export function useAllUsers(options: UseAllUsersOptions = {}): UseAllUsersReturn {
   const { search, role } = options;
 
-  const constraints = useMemo(() => {
-    const c: QueryConstraint[] = [
-      orderBy('joinedAt', 'desc'),
-    ];
-    return c;
-  }, []);
-
-  // Stable key — no variable Firestore parameters
+  // No orderBy — collection group queries require explicit indexes.
+  // Sort client-side after fetch instead.
   const constraintKey = 'allUsers:memberships';
 
   const { data, loading, error } = useCollectionGroup<StoreMembership>(
     'memberships',
-    constraints,
+    [],
     constraintKey,
   );
 
-  // Client-side filtering for role and search
+  // Client-side sorting + filtering (avoids needing collection group index)
   const allUsers = useMemo(() => {
-    let filtered = data;
+    let filtered = [...data].sort((a, b) => {
+      const aTime = (a.joinedAt as unknown as { seconds?: number })?.seconds ?? 0;
+      const bTime = (b.joinedAt as unknown as { seconds?: number })?.seconds ?? 0;
+      return bTime - aTime; // desc
+    });
 
     if (role) {
       filtered = filtered.filter((m) => m.role === role);

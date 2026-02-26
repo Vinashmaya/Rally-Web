@@ -5,7 +5,6 @@
 // Supports client-side search and status filtering
 
 import { useMemo } from 'react';
-import { orderBy, type QueryConstraint } from 'firebase/firestore';
 import { useCollectionGroup } from './useFirestore';
 import type { Vehicle } from '../types/vehicle';
 
@@ -23,25 +22,21 @@ interface UseAllVehiclesReturn {
 export function useAllVehicles(options: UseAllVehiclesOptions = {}): UseAllVehiclesReturn {
   const { search, status } = options;
 
-  const constraints = useMemo(() => {
-    const c: QueryConstraint[] = [
-      orderBy('stockNumber', 'asc'),
-    ];
-    return c;
-  }, []);
-
-  // Stable key — no variable Firestore parameters
+  // No orderBy — collection group queries require explicit indexes.
+  // Sort client-side after fetch instead.
   const constraintKey = 'allVehicles:vehicles';
 
   const { data, loading, error } = useCollectionGroup<Vehicle>(
     'vehicles',
-    constraints,
+    [],
     constraintKey,
   );
 
-  // Client-side filtering for status and search
+  // Client-side sorting + filtering (avoids needing collection group index)
   const allVehicles = useMemo(() => {
-    let filtered = data;
+    let filtered = [...data].sort((a, b) =>
+      (a.stockNumber ?? '').localeCompare(b.stockNumber ?? '', undefined, { numeric: true }),
+    );
 
     if (status) {
       filtered = filtered.filter((v) => v.status === status);

@@ -5,7 +5,6 @@
 // Returns most recent activities ordered by startedAt desc, limited to configurable count
 
 import { useMemo } from 'react';
-import { orderBy, limit, type QueryConstraint } from 'firebase/firestore';
 import { useCollectionGroup } from './useFirestore';
 import type { VehicleActivity } from '../types/activity';
 
@@ -22,22 +21,25 @@ interface UseAllActivitiesReturn {
 export function useAllActivities(options: UseAllActivitiesOptions = {}): UseAllActivitiesReturn {
   const { limitCount = 50 } = options;
 
-  const constraints = useMemo(() => {
-    const c: QueryConstraint[] = [
-      orderBy('startedAt', 'desc'),
-      limit(limitCount),
-    ];
-    return c;
-  }, [limitCount]);
-
-  // Stable key — captures limit value
-  const constraintKey = `allActivities:vehicleActivities:${limitCount}`;
+  // No orderBy/limit — collection group queries require explicit indexes.
+  // Sort and limit client-side after fetch instead.
+  const constraintKey = 'allActivities:vehicleActivities';
 
   const { data, loading, error } = useCollectionGroup<VehicleActivity>(
     'vehicleActivities',
-    constraints,
+    [],
     constraintKey,
   );
 
-  return { allActivities: data, loading, error };
+  // Client-side sort (desc by startedAt) + limit
+  const allActivities = useMemo(() => {
+    const sorted = [...data].sort((a, b) => {
+      const aTime = (a.startedAt as unknown as { seconds?: number })?.seconds ?? 0;
+      const bTime = (b.startedAt as unknown as { seconds?: number })?.seconds ?? 0;
+      return bTime - aTime; // desc
+    });
+    return sorted.slice(0, limitCount);
+  }, [data, limitCount]);
+
+  return { allActivities, loading, error };
 }

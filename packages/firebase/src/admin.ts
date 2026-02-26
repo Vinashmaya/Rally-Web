@@ -22,15 +22,15 @@ let _db: Firestore | undefined;
 
 function getAdminApp(): App {
   if (!_app) {
-    _app = getApps().length > 0
-      ? getApp()
-      : initializeApp({
-          credential: cert({
-            projectId: process.env.FIREBASE_ADMIN_PROJECT_ID!,
-            clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL!,
-            privateKey: process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-          }),
-        });
+    if (getApps().length > 0) {
+      _app = getApp();
+    } else {
+      const projectId = process.env.FIREBASE_ADMIN_PROJECT_ID;
+      const clientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL;
+      const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n');
+      console.log(`[admin] Initializing Firebase Admin: project=${projectId}, email=${clientEmail}, keyLength=${privateKey?.length ?? 0}`);
+      _app = initializeApp({ credential: cert({ projectId: projectId!, clientEmail: clientEmail!, privateKey }) });
+    }
   }
   return _app;
 }

@@ -78,8 +78,8 @@ export async function verifySession(): Promise<VerifiedSession | null> {
       const token = await getAdminAuth().verifySessionCookie(sessionCookie, true);
       return buildSession(token);
     }
-  } catch {
-    // Cookie present but invalid — fall through to bearer
+  } catch (err) {
+    console.error('[auth-guard] session cookie verification failed:', err instanceof Error ? err.message : err);
   }
 
   // --- Attempt 2: Authorization bearer token ---
@@ -89,8 +89,8 @@ export async function verifySession(): Promise<VerifiedSession | null> {
       const token = await getAdminAuth().verifyIdToken(bearerToken, true);
       return buildSession(token);
     }
-  } catch {
-    // Bearer present but invalid
+  } catch (err) {
+    console.error('[auth-guard] bearer token verification failed:', err instanceof Error ? err.message : err);
   }
 
   return null;

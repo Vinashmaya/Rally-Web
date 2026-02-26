@@ -447,8 +447,8 @@ export default function LotConfigPage() {
           )}
           <button
             onClick={handleSave}
-            disabled={saving || !selectedStore}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[var(--rally-gold)] text-black font-semibold text-sm hover:bg-[var(--rally-gold-hover)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-lg shadow-[var(--rally-gold)]/20"
+            disabled={saving}
+            className="flex items-center gap-2 px-6 py-3 rounded-lg bg-[var(--rally-gold)] text-black font-bold text-sm hover:bg-[var(--rally-gold-hover)] disabled:opacity-70 transition-colors"
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Save Config

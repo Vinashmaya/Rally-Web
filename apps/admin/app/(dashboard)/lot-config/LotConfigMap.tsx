@@ -282,7 +282,10 @@ export default function LotConfigMap({
     const overlay = config.imageOverlays[0];
     if (!overlay) return;
 
-    const corners = computeImageCorners(overlay);
+    // Use pre-computed corners if available (from iOS config), otherwise compute
+    const corners = overlay.corners
+      ? overlay.corners.map((p) => [p.longitude, p.latitude] as [number, number]) as [[number, number], [number, number], [number, number], [number, number]]
+      : computeImageCorners(overlay);
 
     map.addSource(IMAGE_OVERLAY_SOURCE, {
       type: 'image',

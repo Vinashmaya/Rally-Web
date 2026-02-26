@@ -519,10 +519,10 @@ export default function LotConfigPage() {
         )}
       </div>
 
-      {/* Main Layout: Map + Side Panel */}
-      <div className="flex gap-4" style={{ height: 'calc(100vh - 350px)', minHeight: '500px' }}>
-        {/* Map */}
-        <div className="flex-1 relative">
+      {/* Main Layout: Map (9:16 portrait) + Side Panel */}
+      <div className="flex gap-4" style={{ height: 'calc(100vh - 350px)', minHeight: '600px' }}>
+        {/* Map — 9:16 portrait to match mobile app */}
+        <div className="relative h-full" style={{ aspectRatio: '9 / 16' }}>
           <LotConfigMap
             config={config}
             onCellClick={handleCellClick}
@@ -537,7 +537,7 @@ export default function LotConfigPage() {
         </div>
 
         {/* Side Panel */}
-        <div className="w-80 flex flex-col gap-3 overflow-y-auto">
+        <div className="flex-1 min-w-[280px] max-w-sm flex flex-col gap-3 overflow-y-auto">
           {/* Panel Tabs */}
           <div className="flex rounded-lg bg-[var(--surface-overlay)] border border-[var(--surface-border)] p-1">
             <button

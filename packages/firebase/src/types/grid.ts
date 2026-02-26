@@ -82,7 +82,7 @@ export const lotGridSchema = z.object({
 export interface LotImageOverlay {
   id: string;
   label: string;
-  imageUrl: string; // Firebase Storage download URL
+  imageUrl: string; // Firebase Storage download URL or relative path
   storagePath?: string; // gs:// path for deletion
   bounds: [GeoPoint, GeoPoint]; // [SW corner, NE corner]
   opacity: number; // 0-1
@@ -92,12 +92,14 @@ export interface LotImageOverlay {
   offsetY: number;
   flipHorizontal: boolean;
   flipVertical: boolean;
+  /** Pre-computed corners [TL, TR, BR, BL] — bypasses computeImageCorners if present */
+  corners?: [GeoPoint, GeoPoint, GeoPoint, GeoPoint];
 }
 
 export const lotImageOverlaySchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
-  imageUrl: z.string().url(),
+  imageUrl: z.string().min(1),
   storagePath: z.string().optional(),
   bounds: z.tuple([geoPointSchema, geoPointSchema]),
   opacity: z.number().min(0).max(1),
@@ -107,6 +109,7 @@ export const lotImageOverlaySchema = z.object({
   offsetY: z.number(),
   flipHorizontal: z.boolean(),
   flipVertical: z.boolean(),
+  corners: z.tuple([geoPointSchema, geoPointSchema, geoPointSchema, geoPointSchema]).optional(),
 });
 
 // ---------------------------------------------------------------------------

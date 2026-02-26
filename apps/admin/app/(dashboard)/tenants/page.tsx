@@ -208,21 +208,32 @@ export default function TenantsListPage() {
       .then((json) => {
         if (json.success && json.data) {
           setTenantRows(
-            (json.data as Array<Record<string, unknown>>).map((t) => ({
-              id: (t.id as string) ?? '',
-              slug: slugify((t.name as string) ?? ''),
-              groupName: (t.name as string) ?? '',
-              status: (t.status as TenantRow['status']) ?? 'active',
-              usersCount: (t.usersCount as number) ?? 0,
-              vehiclesCount: (t.vehiclesCount as number) ?? 0,
-              storesCount: (t.storesCount as number) ?? 0,
-              createdAt: t.createdAt ? new Date(t.createdAt as string).toISOString().split('T')[0] ?? '' : '',
-              subdomain: `${slugify((t.name as string) ?? '')}.rally.vin`,
-            })),
+            (json.data as Array<Record<string, unknown>>).map((t) => {
+              // Firestore Timestamps serialize as {_seconds, _nanoseconds} via JSON
+              let createdAt = '';
+              if (t.createdAt) {
+                const ts = t.createdAt as { _seconds?: number } | string;
+                const ms = typeof ts === 'string' ? Date.parse(ts) : ((ts._seconds ?? 0) * 1000);
+                const d = new Date(ms);
+                if (!isNaN(d.getTime())) createdAt = d.toISOString().split('T')[0] ?? '';
+              }
+              const name = (t.name as string) ?? '';
+              return {
+                id: (t.id as string) ?? '',
+                slug: slugify(name),
+                groupName: name,
+                status: (t.status as TenantRow['status']) ?? 'active',
+                usersCount: (t.usersCount as number) ?? 0,
+                vehiclesCount: (t.vehiclesCount as number) ?? 0,
+                storesCount: (t.storesCount as number) ?? 0,
+                createdAt,
+                subdomain: `${slugify(name)}.rally.vin`,
+              };
+            }),
           );
         }
       })
-      .catch(() => {})
+      .catch((err) => console.error('[tenants] fetch failed:', err))
       .finally(() => setLoading(false));
   }, []);
 

@@ -112,20 +112,20 @@ function mapVehicleToSystemVehicle(vehicle: Vehicle): SystemVehicle {
   }
 
   return {
-    id: vehicle.id ?? vehicle.vin,
-    vin: vehicle.vin,
-    stockNumber: vehicle.stockNumber,
-    year: vehicle.year,
-    make: vehicle.make,
-    model: vehicle.model,
+    id: vehicle.id ?? vehicle.vin ?? 'unknown',
+    vin: vehicle.vin ?? '',
+    stockNumber: vehicle.stockNumber ?? '',
+    year: vehicle.year ?? 0,
+    make: vehicle.make ?? '',
+    model: vehicle.model ?? '',
     trim: vehicle.trim,
     color: vehicle.exteriorColor,
-    status: vehicle.status as VehicleDisplayStatus,
+    status: (vehicle.status as VehicleDisplayStatus) ?? 'frontline',
     daysOnLot,
-    dealershipId: vehicle.dealershipId,
+    dealershipId: vehicle.dealershipId ?? '',
     primaryPhotoUrl: vehicle.primaryPhotoUrl,
-    tenantName: vehicle.dealershipId,
-    tenantSlug: vehicle.dealershipId,
+    tenantName: vehicle.dealershipId ?? '',
+    tenantSlug: vehicle.dealershipId ?? '',
   };
 }
 
@@ -133,7 +133,8 @@ function mapVehicleToSystemVehicle(vehicle: Vehicle): SystemVehicle {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function truncateVin(vin: string): string {
+function truncateVin(vin: string | undefined): string {
+  if (!vin) return '—';
   if (vin.length <= 11) return vin;
   return `...${vin.slice(-8)}`;
 }
@@ -313,11 +314,11 @@ export default function SystemVehiclesPage() {
       const query = search.toLowerCase();
       result = result.filter(
         (v) =>
-          v.stockNumber.toLowerCase().includes(query) ||
-          v.vin.toLowerCase().includes(query) ||
+          (v.stockNumber ?? '').toLowerCase().includes(query) ||
+          (v.vin ?? '').toLowerCase().includes(query) ||
           `${v.year} ${v.make} ${v.model}`.toLowerCase().includes(query) ||
-          v.make.toLowerCase().includes(query) ||
-          v.model.toLowerCase().includes(query),
+          (v.make ?? '').toLowerCase().includes(query) ||
+          (v.model ?? '').toLowerCase().includes(query),
       );
     }
 

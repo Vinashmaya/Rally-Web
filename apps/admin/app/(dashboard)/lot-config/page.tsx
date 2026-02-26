@@ -147,23 +147,40 @@ export default function LotConfigPage() {
     [config.imageOverlays, selectedOverlayId],
   );
 
-  // Load stores on mount
+  // Load stores on mount — fetches groups from tenants API, then stores per group
   useEffect(() => {
     async function loadStores() {
       try {
         const res = await fetch('/api/admin/tenants');
         if (!res.ok) throw new Error('Failed to load tenants');
-        const { tenants } = await res.json();
+        const json = await res.json();
+        const groups = json.data ?? json.tenants ?? [];
 
         const storeList: StoreOption[] = [];
-        for (const tenant of tenants) {
-          // Each tenant may have sub-stores; use tenant as both group and store for simplicity
-          storeList.push({
-            groupId: tenant.id,
-            groupName: tenant.name ?? tenant.id,
-            storeId: tenant.id,
-            storeName: tenant.name ?? tenant.id,
-          });
+        for (const group of groups) {
+          // Fetch actual stores for this group
+          try {
+            const storesRes = await fetch(`/api/admin/lot-config/stores?groupId=${group.id}`);
+            if (storesRes.ok) {
+              const { stores: groupStores } = await storesRes.json();
+              for (const store of groupStores ?? []) {
+                storeList.push({
+                  groupId: group.id,
+                  groupName: group.name ?? group.id,
+                  storeId: store.id,
+                  storeName: store.name ?? store.id,
+                });
+              }
+            }
+          } catch {
+            // Fallback: use group as store (single-store groups)
+            storeList.push({
+              groupId: group.id,
+              groupName: group.name ?? group.id,
+              storeId: group.id,
+              storeName: group.name ?? group.id,
+            });
+          }
         }
         setStores(storeList);
       } catch (err) {

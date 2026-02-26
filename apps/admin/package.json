@@ -11,13 +11,14 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
-    "@tanstack/react-table": "^8.21.3",
     "@rally/firebase": "workspace:*",
     "@rally/infra": "workspace:*",
     "@rally/services": "workspace:*",
     "@rally/ui": "workspace:*",
+    "@tanstack/react-table": "^8.21.3",
     "geist": "^1.3.0",
     "lucide-react": "^0.468.0",
+    "mapbox-gl": "^3.19.0",
     "next": "^15.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -27,6 +28,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.0",
+    "@types/mapbox-gl": "^3.5.0",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "postcss": "^8.5.0",

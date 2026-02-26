@@ -29,3 +29,22 @@ export {
   usePermissionStore,
   initPermissionSubscription,
 } from './stores';
+
+// Grid engine — coordinate transforms, cell calculations, GeoJSON generation
+export {
+  rotatePoint,
+  offsetLatLng,
+  getDeltaMeters,
+  cellWidthMeters,
+  cellHeightMeters,
+  totalWidthMeters,
+  totalHeightMeters,
+  getGridHit,
+  getCellCenter,
+  getGridCenter,
+  generateGridLinesGeoJSON,
+  generateCellsGeoJSON,
+  generateGridBoundaryGeoJSON,
+  DealerNameGenerator,
+} from './gridEngine';
+export type { GridHit } from './gridEngine';

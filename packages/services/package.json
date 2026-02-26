@@ -12,15 +12,16 @@
   },
   "dependencies": {
     "firebase": "^11.0.0",
-    "zustand": "^5.0.0",
-    "zod": "^3.23.0"
+    "zod": "^3.23.0",
+    "zustand": "^5.0.0"
   },
   "peerDependencies": {
-    "react": "^19.0.0",
-    "@rally/firebase": "workspace:*"
+    "@rally/firebase": "workspace:*",
+    "react": "^19.0.0"
   },
   "devDependencies": {
-    "typescript": "^5.7.0",
-    "@types/react": "^19.0.0"
+    "@types/geojson": "^7946.0.16",
+    "@types/react": "^19.0.0",
+    "typescript": "^5.7.0"
   }
 }

@@ -17,6 +17,7 @@ import {
   CreditCard,
   ScrollText,
   Server,
+  Grid3X3,
 } from 'lucide-react';
 
 const NAV_ITEMS: NavItem[] = [
@@ -25,6 +26,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'users', label: 'Users', icon: Users, href: '/users' },
   { id: 'vehicles', label: 'Vehicles', icon: Car, href: '/vehicles' },
   { id: 'activity', label: 'Activity', icon: Activity, href: '/activity' },
+  { id: 'lot-config', label: 'Lot Config', icon: Grid3X3, href: '/lot-config' },
   { id: 'dns', label: 'DNS', icon: Globe, href: '/dns' },
   { id: 'feature-flags', label: 'Feature Flags', icon: ToggleLeft, href: '/feature-flags' },
   { id: 'integrations', label: 'Integrations', icon: Plug, href: '/integrations' },

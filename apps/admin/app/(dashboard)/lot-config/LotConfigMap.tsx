@@ -320,7 +320,7 @@ export default function LotConfigMap({
   return (
     <div
       ref={containerRef}
-      className={`w-full h-full min-h-[500px] rounded-lg overflow-hidden border border-[var(--surface-border)] ${className ?? ''}`}
+      className={`w-full h-full min-h-[500px] rounded-lg overflow-hidden border border-surface-border ${className ?? ''}`}
     />
   );
 }

@@ -134,20 +134,20 @@ function Section({ title, icon: Icon, defaultOpen = true, children }: {
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="border border-[var(--surface-border)] rounded-lg overflow-hidden">
+    <div className="border border-surface-border rounded-lg overflow-hidden">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-2 px-3 py-2.5 bg-[var(--surface-overlay)] hover:bg-[var(--surface-hover)] transition-colors text-left"
+        className="w-full flex items-center gap-2 px-3 py-2.5 bg-surface-overlay hover:bg-surface-borderHover transition-colors text-left"
       >
-        <Icon className="h-4 w-4 text-[var(--rally-gold)]" />
-        <span className="text-sm font-medium text-[var(--text-primary)] flex-1">{title}</span>
+        <Icon className="h-4 w-4 text-rally-gold" />
+        <span className="text-sm font-medium text-text-primary flex-1">{title}</span>
         {open ? (
-          <ChevronDown className="h-4 w-4 text-[var(--text-tertiary)]" />
+          <ChevronDown className="h-4 w-4 text-text-tertiary" />
         ) : (
-          <ChevronRight className="h-4 w-4 text-[var(--text-tertiary)]" />
+          <ChevronRight className="h-4 w-4 text-text-tertiary" />
         )}
       </button>
-      {open && <div className="p-3 space-y-3 border-t border-[var(--surface-border)]">{children}</div>}
+      {open && <div className="p-3 space-y-3 border-t border-surface-border">{children}</div>}
     </div>
   );
 }
@@ -159,13 +159,13 @@ function Section({ title, icon: Icon, defaultOpen = true, children }: {
 function LabeledInput({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">{label}</label>
+      <label className="block text-xs font-medium text-text-secondary mb-1">{label}</label>
       {children}
     </div>
   );
 }
 
-const inputCls = 'w-full px-3 py-2 rounded-lg bg-[var(--surface-base)] border border-[var(--surface-border)] text-[var(--text-primary)] text-sm focus:border-[var(--rally-gold)] focus:outline-none transition-colors';
+const inputCls = 'w-full px-3 py-2 rounded-lg bg-surface-base border border-surface-border text-text-primary text-sm focus:border-rally-gold focus:outline-none transition-colors';
 const monoInputCls = `${inputCls} font-mono`;
 const selectCls = inputCls;
 
@@ -429,12 +429,12 @@ export default function LotConfigPage() {
       {/* Header Bar */}
       <div className="flex items-center justify-between pb-4 flex-shrink-0">
         <div className="flex items-center gap-3">
-          <Grid3X3 className="h-6 w-6 text-[var(--rally-gold)]" />
-          <h1 className="text-2xl font-bold text-[var(--text-primary)]">Lot Configuration</h1>
+          <Grid3X3 className="h-6 w-6 text-rally-gold" />
+          <h1 className="text-2xl font-bold text-text-primary">Lot Configuration</h1>
         </div>
         <div className="flex items-center gap-3">
           {saveError && (
-            <span className="text-sm text-[var(--status-error)] flex items-center gap-1.5 max-w-xs truncate">
+            <span className="text-sm text-status-error flex items-center gap-1.5 max-w-xs truncate">
               <AlertCircle className="h-4 w-4 flex-shrink-0" />
               {saveError}
             </span>
@@ -448,7 +448,7 @@ export default function LotConfigPage() {
           <button
             onClick={handleSave}
             disabled={saving}
-            className="flex items-center gap-2 px-6 py-3 rounded-lg bg-[var(--rally-gold)] text-black font-bold text-sm hover:bg-[var(--rally-gold-hover)] disabled:opacity-70 transition-colors"
+            className="flex items-center gap-2 px-6 py-3 rounded-lg bg-rally-gold text-black font-bold text-sm hover:bg-rally-goldLight disabled:opacity-70 transition-colors"
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Save Config
@@ -467,7 +467,7 @@ export default function LotConfigPage() {
           />
           {/* Floating coordinate display */}
           {lastClickCoords && (
-            <div className="absolute bottom-3 left-3 px-3 py-1.5 rounded-lg bg-black/80 border border-[var(--surface-border)] text-xs font-mono text-[var(--text-secondary)]">
+            <div className="absolute bottom-3 left-3 px-3 py-1.5 rounded-lg bg-black/80 border border-surface-border text-xs font-mono text-text-secondary">
               {lastClickCoords.lat.toFixed(6)}, {lastClickCoords.lng.toFixed(6)}
             </div>
           )}
@@ -589,7 +589,7 @@ export default function LotConfigPage() {
                     center: { latitude: lastClickCoords.lat, longitude: lastClickCoords.lng },
                   }));
                 }}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--surface-overlay)] border border-[var(--rally-gold)]/30 text-[var(--rally-gold)] text-sm hover:bg-[var(--rally-gold)]/10 transition-colors w-full justify-center"
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-overlay border border-rally-gold/30 text-rally-gold text-sm hover:bg-rally-gold/10 transition-colors w-full justify-center"
               >
                 <MapPin className="h-4 w-4" />
                 Set Center to Clicked Point
@@ -598,14 +598,14 @@ export default function LotConfigPage() {
           </Section>
 
           {/* Grids & Overlays Tabs */}
-          <div className="border border-[var(--surface-border)] rounded-lg overflow-hidden">
-            <div className="flex bg-[var(--surface-overlay)]">
+          <div className="border border-surface-border rounded-lg overflow-hidden">
+            <div className="flex bg-surface-overlay">
               <button
                 onClick={() => setPanel('grids')}
                 className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 text-sm font-medium transition-colors border-b-2 ${
                   panel === 'grids'
-                    ? 'border-[var(--rally-gold)] text-[var(--rally-gold)] bg-[var(--rally-gold)]/5'
-                    : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                    ? 'border-rally-gold text-rally-gold bg-rally-gold/5'
+                    : 'border-transparent text-text-secondary hover:text-text-primary'
                 }`}
               >
                 <Grid3X3 className="h-4 w-4" />
@@ -615,8 +615,8 @@ export default function LotConfigPage() {
                 onClick={() => setPanel('overlays')}
                 className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 text-sm font-medium transition-colors border-b-2 ${
                   panel === 'overlays'
-                    ? 'border-[var(--rally-gold)] text-[var(--rally-gold)] bg-[var(--rally-gold)]/5'
-                    : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                    ? 'border-rally-gold text-rally-gold bg-rally-gold/5'
+                    : 'border-transparent text-text-secondary hover:text-text-primary'
                 }`}
               >
                 <ImageIcon className="h-4 w-4" />
@@ -629,7 +629,7 @@ export default function LotConfigPage() {
               {panel === 'grids' && (
                 <>
                   {config.grids.length === 0 && (
-                    <p className="text-sm text-[var(--text-tertiary)] text-center py-4">
+                    <p className="text-sm text-text-tertiary text-center py-4">
                       No grids yet. Click the map to set an origin, then add a grid.
                     </p>
                   )}
@@ -640,15 +640,15 @@ export default function LotConfigPage() {
                       onClick={() => setSelectedGridId(grid.id === selectedGridId ? null : grid.id)}
                       className={`flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer transition-colors ${
                         grid.id === selectedGridId
-                          ? 'bg-[var(--rally-gold)]/10 border border-[var(--rally-gold)]/30'
-                          : 'bg-[var(--surface-base)] border border-[var(--surface-border)] hover:border-[var(--text-tertiary)]'
+                          ? 'bg-rally-gold/10 border border-rally-gold/30'
+                          : 'bg-surface-base border border-surface-border hover:border-text-tertiary'
                       }`}
                     >
                       <div
                         className="h-3 w-3 rounded-sm flex-shrink-0 border border-white/20"
                         style={{ backgroundColor: grid.color }}
                       />
-                      <span className="text-sm text-[var(--text-primary)] flex-1 truncate">
+                      <span className="text-sm text-text-primary flex-1 truncate">
                         {grid.label}
                       </span>
                       <Badge variant="default" size="sm">
@@ -659,12 +659,12 @@ export default function LotConfigPage() {
                           e.stopPropagation();
                           updateGrid(grid.id, { visible: !grid.visible });
                         }}
-                        className="p-1 rounded hover:bg-[var(--surface-hover)]"
+                        className="p-1 rounded hover:bg-surface-borderHover"
                       >
                         {grid.visible ? (
-                          <Eye className="h-4 w-4 text-[var(--text-secondary)]" />
+                          <Eye className="h-4 w-4 text-text-secondary" />
                         ) : (
-                          <EyeOff className="h-4 w-4 text-[var(--text-disabled)]" />
+                          <EyeOff className="h-4 w-4 text-text-disabled" />
                         )}
                       </button>
                       <button
@@ -672,16 +672,16 @@ export default function LotConfigPage() {
                           e.stopPropagation();
                           removeGrid(grid.id);
                         }}
-                        className="p-1 rounded hover:bg-[var(--status-error)]/10"
+                        className="p-1 rounded hover:bg-status-error/10"
                       >
-                        <Trash2 className="h-4 w-4 text-[var(--status-error)]" />
+                        <Trash2 className="h-4 w-4 text-status-error" />
                       </button>
                     </div>
                   ))}
 
                   <button
                     onClick={addGrid}
-                    className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-dashed border-[var(--surface-border)] text-[var(--text-secondary)] text-sm hover:border-[var(--rally-gold)] hover:text-[var(--rally-gold)] transition-colors w-full justify-center"
+                    className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-dashed border-surface-border text-text-secondary text-sm hover:border-rally-gold hover:text-rally-gold transition-colors w-full justify-center"
                   >
                     <Plus className="h-4 w-4" />
                     Add Grid
@@ -691,7 +691,7 @@ export default function LotConfigPage() {
                   {selectedGrid && (
                     <Card>
                       <CardContent className="p-3 space-y-3">
-                        <h3 className="text-xs font-semibold text-[var(--rally-gold)] uppercase tracking-wider">
+                        <h3 className="text-xs font-semibold text-rally-gold uppercase tracking-wider">
                           Edit: {selectedGrid.label}
                         </h3>
 
@@ -723,7 +723,7 @@ export default function LotConfigPage() {
                                 type="color"
                                 value={selectedGrid.color}
                                 onChange={(e) => updateGrid(selectedGrid.id, { color: e.target.value })}
-                                className="h-9 w-9 rounded-lg border border-[var(--surface-border)] cursor-pointer bg-transparent"
+                                className="h-9 w-9 rounded-lg border border-surface-border cursor-pointer bg-transparent"
                               />
                               <input
                                 type="text"
@@ -817,7 +817,7 @@ export default function LotConfigPage() {
                               onChange={(e) =>
                                 updateGrid(selectedGrid.id, { opacity: parseFloat(e.target.value) })
                               }
-                              className="w-full accent-[var(--rally-gold)] mt-2"
+                              className="w-full accent-rally-gold mt-2"
                             />
                           </LabeledInput>
                         </div>
@@ -868,13 +868,13 @@ export default function LotConfigPage() {
                                 },
                               })
                             }
-                            className="text-xs text-[var(--rally-gold)] hover:underline"
+                            className="text-xs text-rally-gold hover:underline"
                           >
                             Use clicked point as origin
                           </button>
                         )}
 
-                        <div className="text-xs text-[var(--text-tertiary)] text-center pt-2 border-t border-[var(--surface-border)]">
+                        <div className="text-xs text-text-tertiary text-center pt-2 border-t border-surface-border">
                           {selectedGrid.rows * selectedGrid.cols} cells ·{' '}
                           {(selectedGrid.rows * selectedGrid.cellHeightFt).toFixed(0)}ft ×{' '}
                           {(selectedGrid.cols * selectedGrid.cellWidthFt).toFixed(0)}ft
@@ -889,7 +889,7 @@ export default function LotConfigPage() {
               {panel === 'overlays' && (
                 <>
                   {config.imageOverlays.length === 0 && (
-                    <p className="text-sm text-[var(--text-tertiary)] text-center py-4">
+                    <p className="text-sm text-text-tertiary text-center py-4">
                       No overlays yet. Add an aerial photo overlay.
                     </p>
                   )}
@@ -904,15 +904,15 @@ export default function LotConfigPage() {
                       }
                       className={`flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer transition-colors ${
                         overlay.id === selectedOverlayId
-                          ? 'bg-[var(--rally-gold)]/10 border border-[var(--rally-gold)]/30'
-                          : 'bg-[var(--surface-base)] border border-[var(--surface-border)] hover:border-[var(--text-tertiary)]'
+                          ? 'bg-rally-gold/10 border border-rally-gold/30'
+                          : 'bg-surface-base border border-surface-border hover:border-text-tertiary'
                       }`}
                     >
-                      <ImageIcon className="h-4 w-4 text-[var(--text-secondary)]" />
-                      <span className="text-sm text-[var(--text-primary)] flex-1 truncate">
+                      <ImageIcon className="h-4 w-4 text-text-secondary" />
+                      <span className="text-sm text-text-primary flex-1 truncate">
                         {overlay.label}
                       </span>
-                      <span className="text-xs text-[var(--text-tertiary)] font-mono">
+                      <span className="text-xs text-text-tertiary font-mono">
                         {(overlay.opacity * 100).toFixed(0)}%
                       </span>
                       <button
@@ -920,16 +920,16 @@ export default function LotConfigPage() {
                           e.stopPropagation();
                           removeOverlay(overlay.id);
                         }}
-                        className="p-1 rounded hover:bg-[var(--status-error)]/10"
+                        className="p-1 rounded hover:bg-status-error/10"
                       >
-                        <Trash2 className="h-4 w-4 text-[var(--status-error)]" />
+                        <Trash2 className="h-4 w-4 text-status-error" />
                       </button>
                     </div>
                   ))}
 
                   <button
                     onClick={addOverlay}
-                    className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-dashed border-[var(--surface-border)] text-[var(--text-secondary)] text-sm hover:border-[var(--rally-gold)] hover:text-[var(--rally-gold)] transition-colors w-full justify-center"
+                    className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-dashed border-surface-border text-text-secondary text-sm hover:border-rally-gold hover:text-rally-gold transition-colors w-full justify-center"
                   >
                     <Plus className="h-4 w-4" />
                     Add Image Overlay
@@ -939,7 +939,7 @@ export default function LotConfigPage() {
                   {selectedOverlay && (
                     <Card>
                       <CardContent className="p-3 space-y-3">
-                        <h3 className="text-xs font-semibold text-[var(--rally-gold)] uppercase tracking-wider">
+                        <h3 className="text-xs font-semibold text-rally-gold uppercase tracking-wider">
                           Edit: {selectedOverlay.label}
                         </h3>
 
@@ -967,15 +967,15 @@ export default function LotConfigPage() {
                         </LabeledInput>
 
                         {/* Tool Tabs */}
-                        <div className="flex gap-1 bg-[var(--surface-base)] rounded-lg p-1">
+                        <div className="flex gap-1 bg-surface-base rounded-lg p-1">
                           {OVERLAY_TOOLS.map((tool) => (
                             <button
                               key={tool.id}
                               onClick={() => setActiveTool(tool.id)}
                               className={`flex-1 flex flex-col items-center gap-0.5 p-2 rounded-md text-xs transition-colors ${
                                 activeTool === tool.id
-                                  ? 'bg-[var(--rally-gold)] text-black font-medium'
-                                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
+                                  ? 'bg-rally-gold text-black font-medium'
+                                  : 'text-text-secondary hover:text-text-primary hover:bg-surface-borderHover'
                               }`}
                               title={tool.label}
                             >
@@ -988,9 +988,9 @@ export default function LotConfigPage() {
                         {/* Tool Controls */}
                         {activeTool === 'opacity' && (
                           <div>
-                            <div className="flex justify-between text-xs text-[var(--text-secondary)] mb-1">
+                            <div className="flex justify-between text-xs text-text-secondary mb-1">
                               <span>Opacity</span>
-                              <span className="font-mono text-[var(--text-primary)]">{(selectedOverlay.opacity * 100).toFixed(0)}%</span>
+                              <span className="font-mono text-text-primary">{(selectedOverlay.opacity * 100).toFixed(0)}%</span>
                             </div>
                             <input
                               type="range"
@@ -1003,16 +1003,16 @@ export default function LotConfigPage() {
                                   opacity: parseFloat(e.target.value),
                                 })
                               }
-                              className="w-full accent-[var(--rally-gold)]"
+                              className="w-full accent-rally-gold"
                             />
                           </div>
                         )}
 
                         {activeTool === 'scale' && (
                           <div>
-                            <div className="flex justify-between text-xs text-[var(--text-secondary)] mb-1">
+                            <div className="flex justify-between text-xs text-text-secondary mb-1">
                               <span>Scale</span>
-                              <span className="font-mono text-[var(--text-primary)]">{selectedOverlay.scale.toFixed(2)}×</span>
+                              <span className="font-mono text-text-primary">{selectedOverlay.scale.toFixed(2)}×</span>
                             </div>
                             <input
                               type="range"
@@ -1025,16 +1025,16 @@ export default function LotConfigPage() {
                                   scale: parseFloat(e.target.value),
                                 })
                               }
-                              className="w-full accent-[var(--rally-gold)]"
+                              className="w-full accent-rally-gold"
                             />
                           </div>
                         )}
 
                         {activeTool === 'rotation' && (
                           <div>
-                            <div className="flex justify-between text-xs text-[var(--text-secondary)] mb-1">
+                            <div className="flex justify-between text-xs text-text-secondary mb-1">
                               <span>Rotation</span>
-                              <span className="font-mono text-[var(--text-primary)]">{selectedOverlay.rotationDeg.toFixed(1)}°</span>
+                              <span className="font-mono text-text-primary">{selectedOverlay.rotationDeg.toFixed(1)}°</span>
                             </div>
                             <input
                               type="range"
@@ -1047,7 +1047,7 @@ export default function LotConfigPage() {
                                   rotationDeg: parseFloat(e.target.value),
                                 })
                               }
-                              className="w-full accent-[var(--rally-gold)]"
+                              className="w-full accent-rally-gold"
                             />
                           </div>
                         )}
@@ -1055,9 +1055,9 @@ export default function LotConfigPage() {
                         {activeTool === 'position' && (
                           <div className="space-y-2">
                             <div>
-                              <div className="flex justify-between text-xs text-[var(--text-secondary)] mb-1">
+                              <div className="flex justify-between text-xs text-text-secondary mb-1">
                                 <span>Offset X (meters)</span>
-                                <span className="font-mono text-[var(--text-primary)]">{selectedOverlay.offsetX.toFixed(1)}m</span>
+                                <span className="font-mono text-text-primary">{selectedOverlay.offsetX.toFixed(1)}m</span>
                               </div>
                               <input
                                 type="range"
@@ -1070,13 +1070,13 @@ export default function LotConfigPage() {
                                     offsetX: parseFloat(e.target.value),
                                   })
                                 }
-                                className="w-full accent-[var(--rally-gold)]"
+                                className="w-full accent-rally-gold"
                               />
                             </div>
                             <div>
-                              <div className="flex justify-between text-xs text-[var(--text-secondary)] mb-1">
+                              <div className="flex justify-between text-xs text-text-secondary mb-1">
                                 <span>Offset Y (meters)</span>
-                                <span className="font-mono text-[var(--text-primary)]">{selectedOverlay.offsetY.toFixed(1)}m</span>
+                                <span className="font-mono text-text-primary">{selectedOverlay.offsetY.toFixed(1)}m</span>
                               </div>
                               <input
                                 type="range"
@@ -1089,7 +1089,7 @@ export default function LotConfigPage() {
                                     offsetY: parseFloat(e.target.value),
                                   })
                                 }
-                                className="w-full accent-[var(--rally-gold)]"
+                                className="w-full accent-rally-gold"
                               />
                             </div>
                           </div>
@@ -1105,8 +1105,8 @@ export default function LotConfigPage() {
                               }
                               className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border text-sm font-medium transition-colors ${
                                 selectedOverlay.flipHorizontal
-                                  ? 'bg-[var(--rally-gold)]/10 border-[var(--rally-gold)]/30 text-[var(--rally-gold)]'
-                                  : 'bg-[var(--surface-base)] border-[var(--surface-border)] text-[var(--text-secondary)]'
+                                  ? 'bg-rally-gold/10 border-rally-gold/30 text-rally-gold'
+                                  : 'bg-surface-base border-surface-border text-text-secondary'
                               }`}
                             >
                               <FlipHorizontal className="h-4 w-4" />
@@ -1120,8 +1120,8 @@ export default function LotConfigPage() {
                               }
                               className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border text-sm font-medium transition-colors ${
                                 selectedOverlay.flipVertical
-                                  ? 'bg-[var(--rally-gold)]/10 border-[var(--rally-gold)]/30 text-[var(--rally-gold)]'
-                                  : 'bg-[var(--surface-base)] border-[var(--surface-border)] text-[var(--text-secondary)]'
+                                  ? 'bg-rally-gold/10 border-rally-gold/30 text-rally-gold'
+                                  : 'bg-surface-base border-surface-border text-text-secondary'
                               }`}
                             >
                               <FlipVertical className="h-4 w-4" />

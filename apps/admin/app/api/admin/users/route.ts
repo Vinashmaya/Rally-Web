@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
 import { getAdminAuth, getAdminDb, requireSuperAdmin, isVerifiedSession } from '@rally/firebase/admin';
 
 export const dynamic = 'force-dynamic';
 
 // GET — List all users with real auth data (email, displayName) merged with membership roles
-export async function GET() {
-  const auth = await requireSuperAdmin();
+export async function GET(request: NextRequest) {
+  const auth = await requireSuperAdmin(request);
   if (!isVerifiedSession(auth)) return auth;
 
   try {

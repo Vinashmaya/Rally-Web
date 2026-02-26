@@ -6,11 +6,11 @@ export const dynamic = 'force-dynamic';
 
 // POST — Suspend a tenant group (disable all member accounts)
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ groupId: string }> },
 ) {
   try {
-    const auth = await requireSuperAdmin();
+    const auth = await requireSuperAdmin(request);
     if (!isVerifiedSession(auth)) return auth;
 
     const { groupId } = await params;

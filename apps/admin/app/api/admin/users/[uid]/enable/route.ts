@@ -6,11 +6,11 @@ export const dynamic = 'force-dynamic';
 
 // POST — Enable a user account (Firebase Auth + Firestore)
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ uid: string }> },
 ) {
   try {
-    const auth = await requireSuperAdmin();
+    const auth = await requireSuperAdmin(request);
     if (!isVerifiedSession(auth)) return auth;
 
     const { uid } = await params;

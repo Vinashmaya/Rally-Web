@@ -6,11 +6,11 @@ export const dynamic = 'force-dynamic';
 
 // GET — Fetch tenant detail (group + stores + aggregate stats)
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ groupId: string }> },
 ) {
   try {
-    const auth = await requireSuperAdmin();
+    const auth = await requireSuperAdmin(request);
     if (!isVerifiedSession(auth)) return auth;
 
     const { groupId } = await params;

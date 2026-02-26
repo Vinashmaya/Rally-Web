@@ -7,11 +7,11 @@ export const dynamic = 'force-dynamic';
 
 // DELETE — Remove a DNS record by ID
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ recordId: string }> },
 ) {
   try {
-    const auth = await requireSuperAdmin();
+    const auth = await requireSuperAdmin(request);
     if (!isVerifiedSession(auth)) return auth;
 
     const { recordId } = await params;

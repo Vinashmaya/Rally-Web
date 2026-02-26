@@ -12,7 +12,7 @@ export async function PUT(
   { params }: { params: Promise<{ listId: string }> },
 ) {
   try {
-    const auth = await requireAuth();
+    const auth = await requireAuth(request);
     if (!isVerifiedSession(auth)) return auth;
 
     const { listId } = await params;
@@ -60,11 +60,11 @@ export async function PUT(
 
 // DELETE — Delete a vehicle list
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ listId: string }> },
 ) {
   try {
-    const auth = await requireAuth();
+    const auth = await requireAuth(request);
     if (!isVerifiedSession(auth)) return auth;
 
     const { listId } = await params;

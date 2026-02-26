@@ -16,9 +16,9 @@ interface FeatureFlag {
 }
 
 // GET — List all feature flags
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const auth = await requireSuperAdmin();
+    const auth = await requireSuperAdmin(request);
     if (!isVerifiedSession(auth)) return auth;
 
     const snapshot = await adminDb.collection(COLLECTION).orderBy('name').get();
@@ -41,7 +41,7 @@ export async function GET() {
 // POST — Create or update a feature flag
 export async function POST(request: NextRequest) {
   try {
-    const auth = await requireSuperAdmin();
+    const auth = await requireSuperAdmin(request);
     if (!isVerifiedSession(auth)) return auth;
 
     const body = await request.json();

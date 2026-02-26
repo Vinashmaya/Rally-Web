@@ -15,7 +15,7 @@ interface UserPreferences {
 // PUT — Update user preferences
 export async function PUT(request: NextRequest) {
   try {
-    const auth = await requireAuth();
+    const auth = await requireAuth(request);
     if (!isVerifiedSession(auth)) return auth;
 
     const body = await request.json();

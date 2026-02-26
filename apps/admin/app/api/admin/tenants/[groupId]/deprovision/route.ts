@@ -11,7 +11,7 @@ export async function POST(
   { params }: { params: Promise<{ groupId: string }> },
 ) {
   try {
-    const auth = await requireSuperAdmin();
+    const auth = await requireSuperAdmin(request);
     if (!isVerifiedSession(auth)) return auth;
 
     const { groupId } = await params;

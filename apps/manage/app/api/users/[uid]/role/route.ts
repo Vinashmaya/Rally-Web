@@ -11,7 +11,7 @@ export async function PUT(
   { params }: { params: Promise<{ uid: string }> },
 ) {
   try {
-    const auth = await requireRole('owner', 'general_manager');
+    const auth = await requireRole(request, 'owner', 'general_manager');
     if (!isVerifiedSession(auth)) return auth;
 
     const { uid } = await params;

@@ -12,7 +12,7 @@ export async function PUT(
   { params }: { params: Promise<{ flagId: string }> },
 ) {
   try {
-    const auth = await requireSuperAdmin();
+    const auth = await requireSuperAdmin(request);
     if (!isVerifiedSession(auth)) return auth;
 
     const { flagId } = await params;
@@ -59,11 +59,11 @@ export async function PUT(
 
 // DELETE — Delete a specific feature flag
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ flagId: string }> },
 ) {
   try {
-    const auth = await requireSuperAdmin();
+    const auth = await requireSuperAdmin(request);
     if (!isVerifiedSession(auth)) return auth;
 
     const { flagId } = await params;

@@ -6,9 +6,9 @@ import { requireSuperAdmin, isVerifiedSession } from '@rally/firebase/admin';
 export const dynamic = 'force-dynamic';
 
 // GET — List all DNS records for the rally.vin zone
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const auth = await requireSuperAdmin();
+    const auth = await requireSuperAdmin(request);
     if (!isVerifiedSession(auth)) return auth;
 
     const records = await listDnsRecords();
@@ -25,7 +25,7 @@ export async function GET() {
 // POST — Create a new DNS A record
 export async function POST(request: NextRequest) {
   try {
-    const auth = await requireSuperAdmin();
+    const auth = await requireSuperAdmin(request);
     if (!isVerifiedSession(auth)) return auth;
 
     const body = await request.json();

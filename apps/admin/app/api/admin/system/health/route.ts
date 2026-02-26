@@ -7,9 +7,9 @@ export const dynamic = 'force-dynamic';
 // GET — Return system health metrics
 // In production this would query the VPS via SSH/API for real metrics
 // For now, returns static data with the intent to wire real monitoring later
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const auth = await requireSuperAdmin();
+    const auth = await requireSuperAdmin(request);
     if (!isVerifiedSession(auth)) return auth;
     const health = {
       cpu: { used: 23, label: 'CPU Usage' },
@@ -47,7 +47,7 @@ export async function GET() {
 // POST — Execute system actions (restart, stop, maintenance toggle)
 export async function POST(request: NextRequest) {
   try {
-    const auth = await requireSuperAdmin();
+    const auth = await requireSuperAdmin(request);
     if (!isVerifiedSession(auth)) return auth;
 
     const body = await request.json();

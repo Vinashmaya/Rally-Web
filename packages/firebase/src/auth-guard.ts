@@ -7,10 +7,15 @@
 //   2. Fall back to Authorization: Bearer <idToken> header
 // The bearer fallback ensures API routes work even when Cloudflare's
 // proxy strips Set-Cookie headers from origin responses.
+//
+// All guard functions accept a NextRequest parameter so that cookies and
+// headers are read directly from the request object — no dynamic imports
+// of 'next/headers' needed (which can fail in shared workspace packages).
 
 import 'server-only';
 
 import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
 import { getAdminAuth } from './admin';
 import type { DecodedIdToken } from 'firebase-admin/auth';
 import type { UserRole } from './types/user';
@@ -30,67 +35,33 @@ export interface VerifiedSession {
 }
 
 // ---------------------------------------------------------------------------
-// Cookie extraction — dynamic import to avoid TS resolution issues
-// in shared packages that don't directly depend on 'next'
-// ---------------------------------------------------------------------------
-
-async function getSessionCookie(): Promise<string | undefined> {
-  try {
-    const { cookies } = await import(/* webpackIgnore: true */ 'next/headers');
-    const cookieStore = await cookies();
-    return cookieStore.get('__session')?.value;
-  } catch {
-    return undefined;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Bearer token extraction from Authorization header
-// ---------------------------------------------------------------------------
-
-async function getBearerToken(): Promise<string | undefined> {
-  try {
-    const { headers } = await import(/* webpackIgnore: true */ 'next/headers');
-    const headerStore = await headers();
-    const auth = headerStore.get('authorization');
-    if (auth?.startsWith('Bearer ')) {
-      return auth.slice(7);
-    }
-    return undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Core: verify session via cookie OR bearer token → decoded token + claims
 //
+// Reads __session cookie and Authorization header directly from the request.
 // Priority: session cookie (verifySessionCookie) > bearer (verifyIdToken)
-// Session cookies are preferred because they support revocation checking.
-// Bearer tokens are the fallback when Set-Cookie is stripped by CDN/proxy.
 // ---------------------------------------------------------------------------
 
-export async function verifySession(): Promise<VerifiedSession | null> {
+export async function verifySession(request: NextRequest): Promise<VerifiedSession | null> {
   // --- Attempt 1: session cookie ---
-  try {
-    const sessionCookie = await getSessionCookie();
-    if (sessionCookie) {
+  const sessionCookie = request.cookies.get('__session')?.value;
+  if (sessionCookie) {
+    try {
       const token = await getAdminAuth().verifySessionCookie(sessionCookie, true);
       return buildSession(token);
+    } catch (err) {
+      console.error('[auth-guard] session cookie verification failed:', err instanceof Error ? err.message : err);
     }
-  } catch (err) {
-    console.error('[auth-guard] session cookie verification failed:', err instanceof Error ? err.message : err);
   }
 
   // --- Attempt 2: Authorization bearer token ---
-  try {
-    const bearerToken = await getBearerToken();
-    if (bearerToken) {
-      const token = await getAdminAuth().verifyIdToken(bearerToken, true);
+  const authHeader = request.headers.get('authorization');
+  if (authHeader?.startsWith('Bearer ')) {
+    try {
+      const token = await getAdminAuth().verifyIdToken(authHeader.slice(7), true);
       return buildSession(token);
+    } catch (err) {
+      console.error('[auth-guard] bearer token verification failed:', err instanceof Error ? err.message : err);
     }
-  } catch (err) {
-    console.error('[auth-guard] bearer token verification failed:', err instanceof Error ? err.message : err);
   }
 
   return null;
@@ -131,8 +102,8 @@ function buildSession(token: DecodedIdToken): VerifiedSession {
 // ---------------------------------------------------------------------------
 
 /** Require any authenticated user. Returns 401 if no valid session. */
-export async function requireAuth(): Promise<VerifiedSession | NextResponse> {
-  const session = await verifySession();
+export async function requireAuth(request: NextRequest): Promise<VerifiedSession | NextResponse> {
+  const session = await verifySession(request);
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
@@ -141,9 +112,10 @@ export async function requireAuth(): Promise<VerifiedSession | NextResponse> {
 
 /** Require specific role(s). Super admins pass all role checks. */
 export async function requireRole(
+  request: NextRequest,
   ...allowedRoles: UserRole[]
 ): Promise<VerifiedSession | NextResponse> {
-  const session = await verifySession();
+  const session = await verifySession(request);
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
@@ -155,8 +127,8 @@ export async function requireRole(
 }
 
 /** Require super admin (UID-based). Returns 401/403 on failure. */
-export async function requireSuperAdmin(): Promise<VerifiedSession | NextResponse> {
-  const session = await verifySession();
+export async function requireSuperAdmin(request: NextRequest): Promise<VerifiedSession | NextResponse> {
+  const session = await verifySession(request);
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }

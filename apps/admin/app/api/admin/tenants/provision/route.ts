@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 // POST — Provision a new tenant (Cloudflare DNS + Plesk vhost + Firestore seeding)
 export async function POST(request: NextRequest) {
   try {
-    const auth = await requireSuperAdmin();
+    const auth = await requireSuperAdmin(request);
     if (!isVerifiedSession(auth)) return auth;
 
     const body = await request.json();

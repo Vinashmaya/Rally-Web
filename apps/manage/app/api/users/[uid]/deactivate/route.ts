@@ -6,11 +6,11 @@ export const dynamic = 'force-dynamic';
 
 // POST — Deactivate a user account
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ uid: string }> },
 ) {
   try {
-    const auth = await requireRole('owner', 'general_manager');
+    const auth = await requireRole(request, 'owner', 'general_manager');
     if (!isVerifiedSession(auth)) return auth;
 
     const { uid } = await params;

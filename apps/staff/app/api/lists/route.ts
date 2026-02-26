@@ -9,7 +9,7 @@ const COLLECTION = 'vehicleLists' as const;
 // POST — Create a new vehicle list
 export async function POST(request: NextRequest) {
   try {
-    const auth = await requireAuth();
+    const auth = await requireAuth(request);
     if (!isVerifiedSession(auth)) return auth;
 
     const body = await request.json();

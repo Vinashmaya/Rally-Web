@@ -22,7 +22,7 @@ interface ChatResponse {
 // POST — AI chat proxy (provider-agnostic stub)
 export async function POST(request: NextRequest) {
   try {
-    const auth = await requireAuth();
+    const auth = await requireAuth(request);
     if (!isVerifiedSession(auth)) return auth;
 
     const body = await request.json();

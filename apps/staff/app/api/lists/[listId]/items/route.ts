@@ -12,7 +12,7 @@ export async function POST(
   { params }: { params: Promise<{ listId: string }> },
 ) {
   try {
-    const auth = await requireAuth();
+    const auth = await requireAuth(request);
     if (!isVerifiedSession(auth)) return auth;
 
     const { listId } = await params;
@@ -107,7 +107,7 @@ export async function DELETE(
   { params }: { params: Promise<{ listId: string }> },
 ) {
   try {
-    const auth = await requireAuth();
+    const auth = await requireAuth(request);
     if (!isVerifiedSession(auth)) return auth;
 
     const { listId } = await params;

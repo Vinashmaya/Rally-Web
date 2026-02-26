@@ -14,7 +14,7 @@ function generateTempPassword(): string {
 // POST — Invite a new user (create Firebase Auth account + Firestore documents)
 export async function POST(request: NextRequest) {
   try {
-    const auth = await requireRole('owner', 'general_manager');
+    const auth = await requireRole(request, 'owner', 'general_manager');
     if (!isVerifiedSession(auth)) return auth;
 
     const body = await request.json();

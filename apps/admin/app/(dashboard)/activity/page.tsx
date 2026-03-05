@@ -151,7 +151,7 @@ function ActivityCard({ activity }: { activity: SystemActivity }) {
         startedAt={activity.startedAt}
         endedAt={activity.endedAt}
         customerName={activity.customerName}
-        className="rounded-[var(--radius-rally-lg)] border border-[var(--surface-border)] pr-36"
+        className="rounded-rally-lg border border-surface-border pr-36"
       />
     </div>
   );
@@ -314,8 +314,8 @@ export default function SystemActivityPage() {
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Activity className="h-6 w-6 text-[var(--rally-gold)]" />
-          <h1 className="text-2xl font-bold text-[var(--text-primary)]">
+          <Activity className="h-6 w-6 text-rally-gold" />
+          <h1 className="text-2xl font-bold text-text-primary">
             System Activity
           </h1>
           <Badge variant="default" size="md">
@@ -330,7 +330,7 @@ export default function SystemActivityPage() {
         </div>
       </div>
 
-      <p className="text-sm text-[var(--text-secondary)]">
+      <p className="text-sm text-text-secondary">
         Real-time activity feed across all tenants. Monitor test drives, showings, and vehicle movements system-wide.
       </p>
 
@@ -381,17 +381,17 @@ export default function SystemActivityPage() {
             <div key={group}>
               {/* Date Group Header */}
               <div className="flex items-center gap-3 mb-3">
-                <h2 className="text-sm font-semibold text-[var(--text-primary)]">
+                <h2 className="text-sm font-semibold text-text-primary">
                   {group}
                 </h2>
                 {group === 'Active Now' && (
                   <span className="inline-flex items-center gap-1.5">
-                    <span className="inline-block h-2 w-2 rounded-full bg-[var(--status-success)] animate-rally-pulse" />
-                    <span className="text-xs text-[var(--status-success)]">Live</span>
+                    <span className="inline-block h-2 w-2 rounded-full bg-status-success animate-rally-pulse" />
+                    <span className="text-xs text-status-success">Live</span>
                   </span>
                 )}
-                <div className="flex-1 border-t border-[var(--surface-border)]" />
-                <span className="text-xs text-[var(--text-tertiary)] tabular-nums">
+                <div className="flex-1 border-t border-surface-border" />
+                <span className="text-xs text-text-tertiary tabular-nums">
                   {items.length} {items.length === 1 ? 'event' : 'events'}
                 </span>
               </div>

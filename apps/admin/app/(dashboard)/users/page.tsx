@@ -196,12 +196,12 @@ function ActionMenu({
 }) {
   return (
     <div
-      className="absolute right-0 top-full mt-1 z-50 w-44 rounded-[var(--radius-rally-lg)] bg-[var(--surface-overlay)] border border-[var(--surface-border)] shadow-xl py-1"
+      className="absolute right-0 top-full mt-1 z-50 w-44 rounded-rally-lg bg-surface-overlay border border-surface-border shadow-xl py-1"
       onMouseLeave={onClose}
     >
       <button
         type="button"
-        className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-border)] hover:text-[var(--text-primary)] transition-colors"
+        className="flex w-full items-center gap-2 px-3 py-2 text-sm text-text-secondary hover:bg-surface-border hover:text-text-primary transition-colors"
         onClick={() => {
           onAction(user.id, 'view');
           onClose();
@@ -212,7 +212,7 @@ function ActionMenu({
       </button>
       <button
         type="button"
-        className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--rally-gold)] hover:bg-[var(--surface-border)] transition-colors"
+        className="flex w-full items-center gap-2 px-3 py-2 text-sm text-rally-gold hover:bg-surface-border transition-colors"
         onClick={() => {
           onAction(user.id, 'impersonate');
           onClose();
@@ -221,10 +221,10 @@ function ActionMenu({
         <UserCog className="h-3.5 w-3.5" />
         Impersonate
       </button>
-      <div className="my-1 border-t border-[var(--surface-border)]" />
+      <div className="my-1 border-t border-surface-border" />
       <button
         type="button"
-        className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--status-error)] hover:bg-[var(--surface-border)] transition-colors"
+        className="flex w-full items-center gap-2 px-3 py-2 text-sm text-status-error hover:bg-surface-border transition-colors"
         onClick={() => {
           onAction(user.id, user.status === 'disabled' ? 'enable' : 'disable');
           onClose();
@@ -258,7 +258,7 @@ function ActionCell({
     <div className="relative">
       <button
         type="button"
-        className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-rally)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-overlay)] transition-colors"
+        className="inline-flex h-8 w-8 items-center justify-center rounded-rally text-text-tertiary hover:text-text-primary hover:bg-surface-overlay transition-colors"
         onClick={(e) => {
           e.stopPropagation();
           setOpen(!open);
@@ -372,10 +372,10 @@ export default function SystemUsersPage() {
           <div className="flex items-center gap-3">
             <Avatar name={user.displayName} src={user.photoURL} size="sm" />
             <div className="min-w-0">
-              <p className="text-sm font-medium text-[var(--text-primary)] truncate">
+              <p className="text-sm font-medium text-text-primary truncate">
                 {user.displayName}
               </p>
-              <p className="text-xs text-[var(--text-tertiary)] truncate">
+              <p className="text-xs text-text-tertiary truncate">
                 {user.email}
               </p>
             </div>
@@ -426,7 +426,7 @@ export default function SystemUsersPage() {
       cell: ({ row }) => {
         const lastActive = row.original.lastActiveAt;
         if (!lastActive) {
-          return <span className="text-xs text-[var(--text-disabled)]">Never</span>;
+          return <span className="text-xs text-text-disabled">Never</span>;
         }
         return <RelativeTime date={lastActive} />;
       },
@@ -501,8 +501,8 @@ export default function SystemUsersPage() {
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <ShieldCheck className="h-6 w-6 text-[var(--rally-gold)]" />
-          <h1 className="text-2xl font-bold text-[var(--text-primary)]">
+          <ShieldCheck className="h-6 w-6 text-rally-gold" />
+          <h1 className="text-2xl font-bold text-text-primary">
             System Users
           </h1>
           <Badge variant="default" size="md">
@@ -511,7 +511,7 @@ export default function SystemUsersPage() {
         </div>
       </div>
 
-      <p className="text-sm text-[var(--text-secondary)]">
+      <p className="text-sm text-text-secondary">
         All users across all tenants. Manage roles, access, and impersonation.
       </p>
 

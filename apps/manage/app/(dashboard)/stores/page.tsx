@@ -67,11 +67,11 @@ interface SettingRowProps {
 function SettingRow({ icon: Icon, label, value }: SettingRowProps) {
   return (
     <div className="flex items-center gap-3 py-3">
-      <Icon className="h-4 w-4 text-[var(--text-tertiary)] shrink-0" />
-      <span className="text-xs font-medium uppercase tracking-wider text-[var(--text-secondary)] w-32 shrink-0">
+      <Icon className="h-4 w-4 text-text-tertiary shrink-0" />
+      <span className="text-xs font-medium uppercase tracking-wider text-text-secondary w-32 shrink-0">
         {label}
       </span>
-      <span className="text-sm text-[var(--text-primary)] truncate">{value}</span>
+      <span className="text-sm text-text-primary truncate">{value}</span>
     </div>
   );
 }
@@ -90,8 +90,8 @@ function ToggleRow({ label, description, checked }: ToggleRowProps) {
   return (
     <div className="flex items-center gap-3 py-3">
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-[var(--text-primary)]">{label}</p>
-        <p className="text-xs text-[var(--text-tertiary)]">{description}</p>
+        <p className="text-sm font-medium text-text-primary">{label}</p>
+        <p className="text-xs text-text-tertiary">{description}</p>
       </div>
       <button
         type="button"
@@ -100,8 +100,8 @@ function ToggleRow({ label, description, checked }: ToggleRowProps) {
         disabled
         className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors duration-200 cursor-not-allowed opacity-50 ${
           checked
-            ? 'bg-[var(--rally-gold)]'
-            : 'bg-[var(--surface-border)]'
+            ? 'bg-rally-gold'
+            : 'bg-surface-border'
         }`}
       >
         <span
@@ -120,7 +120,7 @@ function ToggleRow({ label, description, checked }: ToggleRowProps) {
 
 function SectionHeader({ title }: { title: string }) {
   return (
-    <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--rally-gold)] pt-4 pb-1">
+    <h3 className="text-xs font-semibold uppercase tracking-wider text-rally-gold pt-4 pb-1">
       {title}
     </h3>
   );
@@ -143,23 +143,23 @@ function StoreCard({ store, isActive, onSelect }: StoreCardProps) {
       onClick={onSelect}
       className={`flex items-center gap-3 p-3 rounded-rally-lg border transition-colors duration-150 text-left w-full cursor-pointer ${
         isActive
-          ? 'border-[var(--rally-gold)] bg-[var(--rally-gold)]/10'
-          : 'border-[var(--surface-border)] bg-[var(--surface-raised)] hover:border-[var(--surface-borderHover)]'
+          ? 'border-rally-gold bg-rally-gold/10'
+          : 'border-surface-border bg-surface-raised hover:border-surface-borderHover'
       }`}
     >
-      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--surface-overlay)] shrink-0">
-        <Building2 className="h-5 w-5 text-[var(--text-tertiary)]" />
+      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-surface-overlay shrink-0">
+        <Building2 className="h-5 w-5 text-text-tertiary" />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-[var(--text-primary)] truncate">
+        <p className="text-sm font-medium text-text-primary truncate">
           {store.name}
         </p>
-        <p className="text-xs text-[var(--text-tertiary)] truncate">
+        <p className="text-xs text-text-tertiary truncate">
           {store.address}, {store.city}, {store.state}
         </p>
       </div>
       {isActive && (
-        <CheckCircle className="h-5 w-5 text-[var(--rally-gold)] shrink-0" />
+        <CheckCircle className="h-5 w-5 text-rally-gold shrink-0" />
       )}
     </button>
   );
@@ -191,10 +191,10 @@ function FeatureFlagsCard({ flags }: { flags: StoreFeatureFlags }) {
   return (
     <Card>
       <CardHeader>
-        <h2 className="text-sm font-semibold text-[var(--text-primary)]">Feature Flags</h2>
+        <h2 className="text-sm font-semibold text-text-primary">Feature Flags</h2>
       </CardHeader>
       <CardContent>
-        <div className="flex flex-col divide-y divide-[var(--surface-border)]">
+        <div className="flex flex-col divide-y divide-surface-border">
           <ToggleRow
             label="Detail Tracking"
             description="Track time spent on vehicle details"
@@ -211,7 +211,7 @@ function FeatureFlagsCard({ flags }: { flags: StoreFeatureFlags }) {
             checked={flags.photoRequiredOnDelivery}
           />
         </div>
-        <p className="mt-3 text-xs text-[var(--text-tertiary)]">
+        <p className="mt-3 text-xs text-text-tertiary">
           Contact admin to change feature flags.
         </p>
       </CardContent>
@@ -227,12 +227,12 @@ function OperationalSettingsCard({ settings }: { settings: DealershipSettings })
   return (
     <Card>
       <CardHeader>
-        <h2 className="text-sm font-semibold text-[var(--text-primary)]">Operational Settings</h2>
+        <h2 className="text-sm font-semibold text-text-primary">Operational Settings</h2>
       </CardHeader>
       <CardContent>
         {/* Test Drive */}
         <SectionHeader title="Test Drive" />
-        <div className="flex flex-col divide-y divide-[var(--surface-border)]">
+        <div className="flex flex-col divide-y divide-surface-border">
           <SettingRow
             icon={Timer}
             label="Max Duration"
@@ -264,7 +264,7 @@ function OperationalSettingsCard({ settings }: { settings: DealershipSettings })
 
         {/* Hold */}
         <SectionHeader title="Hold" />
-        <div className="flex flex-col divide-y divide-[var(--surface-border)]">
+        <div className="flex flex-col divide-y divide-surface-border">
           <SettingRow
             icon={Hourglass}
             label="Expiration"
@@ -286,7 +286,7 @@ function OperationalSettingsCard({ settings }: { settings: DealershipSettings })
 
         {/* Alert Thresholds */}
         <SectionHeader title="Alert Thresholds" />
-        <div className="flex flex-col divide-y divide-[var(--surface-border)]">
+        <div className="flex flex-col divide-y divide-surface-border">
           <SettingRow
             icon={AlertTriangle}
             label="Lot Warning"
@@ -309,7 +309,7 @@ function OperationalSettingsCard({ settings }: { settings: DealershipSettings })
           />
         </div>
 
-        <p className="mt-4 text-xs text-[var(--text-tertiary)]">
+        <p className="mt-4 text-xs text-text-tertiary">
           Operational settings are managed by your administrator.
         </p>
       </CardContent>
@@ -337,7 +337,7 @@ export default function StoresPage() {
     <div className="p-6 space-y-6">
       {/* Page Header */}
       <div className="flex items-center gap-3">
-        <h1 className="text-2xl font-bold text-[var(--text-primary)]">
+        <h1 className="text-2xl font-bold text-text-primary">
           Store Settings
         </h1>
         <Badge variant="gold" size="sm">
@@ -349,7 +349,7 @@ export default function StoresPage() {
       {availableStores.length > 1 && (
         <Card>
           <CardHeader>
-            <h2 className="text-sm font-semibold text-[var(--text-primary)]">
+            <h2 className="text-sm font-semibold text-text-primary">
               Your Stores
             </h2>
           </CardHeader>
@@ -371,12 +371,12 @@ export default function StoresPage() {
       {/* Store Information */}
       <Card>
         <CardHeader>
-          <h2 className="text-sm font-semibold text-[var(--text-primary)]">
+          <h2 className="text-sm font-semibold text-text-primary">
             Store Information
           </h2>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col divide-y divide-[var(--surface-border)]">
+          <div className="flex flex-col divide-y divide-surface-border">
             <SettingRow icon={Building2} label="Name" value={activeStore.name} />
             <SettingRow icon={MapPin} label="Address" value={fullAddress} />
             {activeStore.phone && (

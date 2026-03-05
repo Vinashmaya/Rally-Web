@@ -83,7 +83,7 @@ function extractSlug(host: string): string | null {
   const slug = hostname.replace('.rally.vin', '');
 
   // Don't match reserved subdomains (those are other apps)
-  const reserved = ['app', 'manage', 'admin', 'api', 'www'];
+  const reserved = ['app', 'manage', 'admin', 'api', 'www', 'messaging', 'eyes', 'me'];
   if (reserved.includes(slug)) return null;
 
   return slug;

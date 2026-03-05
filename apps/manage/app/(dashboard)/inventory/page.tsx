@@ -46,10 +46,10 @@ const PIPELINE_COLORS: Record<VehicleStatus, string> = {
 // ---------------------------------------------------------------------------
 
 function getAgingColor(days: number): string {
-  if (days >= 90) return 'text-[var(--status-error)]';
+  if (days >= 90) return 'text-status-error';
   if (days >= 60) return 'text-orange-400';
-  if (days >= 30) return 'text-[var(--status-warning)]';
-  return 'text-[var(--status-success)]';
+  if (days >= 30) return 'text-status-warning';
+  return 'text-status-success';
 }
 
 // ---------------------------------------------------------------------------
@@ -234,7 +234,7 @@ export default function InventoryOversightPage() {
       {/* Page Header */}
       {/* ----------------------------------------------------------------- */}
       <div className="flex items-center gap-3">
-        <h1 className="text-2xl font-bold text-[var(--text-primary)]">
+        <h1 className="text-2xl font-bold text-text-primary">
           Inventory Oversight
         </h1>
         <Badge variant="default" size="sm">
@@ -247,7 +247,7 @@ export default function InventoryOversightPage() {
       {/* ----------------------------------------------------------------- */}
       <Card>
         <CardHeader>
-          <h2 className="text-sm font-semibold text-[var(--text-primary)]">
+          <h2 className="text-sm font-semibold text-text-primary">
             Status Pipeline
           </h2>
         </CardHeader>
@@ -255,7 +255,7 @@ export default function InventoryOversightPage() {
           {/* Stacked bar */}
           {totalVehicles > 0 ? (
             <div className="flex flex-col gap-3">
-              <div className="flex h-8 w-full overflow-hidden rounded-[var(--radius-rally)]">
+              <div className="flex h-8 w-full overflow-hidden rounded-rally">
                 {VEHICLE_STATUS_VALUES.map((status) => {
                   const count = statusCounts[status];
                   if (count === 0) return null;
@@ -287,10 +287,10 @@ export default function InventoryOversightPage() {
                       <span
                         className={`h-2.5 w-2.5 rounded-full ${PIPELINE_COLORS[status]}`}
                       />
-                      <span className="text-xs text-[var(--text-secondary)]">
+                      <span className="text-xs text-text-secondary">
                         {VEHICLE_STATUS_DISPLAY[status].displayName}
                       </span>
-                      <span className="text-xs font-medium text-[var(--text-primary)] tabular-nums">
+                      <span className="text-xs font-medium text-text-primary tabular-nums">
                         {count}
                       </span>
                     </div>
@@ -299,7 +299,7 @@ export default function InventoryOversightPage() {
               </div>
             </div>
           ) : (
-            <p className="text-sm text-[var(--text-tertiary)]">
+            <p className="text-sm text-text-tertiary">
               No vehicles in inventory.
             </p>
           )}
@@ -311,35 +311,35 @@ export default function InventoryOversightPage() {
       {/* ----------------------------------------------------------------- */}
       <Card>
         <CardHeader>
-          <h2 className="text-sm font-semibold text-[var(--text-primary)]">
+          <h2 className="text-sm font-semibold text-text-primary">
             Aging Analysis
           </h2>
-          <p className="text-xs text-[var(--text-tertiary)]">
+          <p className="text-xs text-text-tertiary">
             Frontline vehicles grouped by days on lot
           </p>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
             {/* Total Frontline */}
-            <div className="flex flex-col gap-1 rounded-[var(--radius-rally)] bg-[var(--surface-overlay)] p-3">
-              <span className="text-xs font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+            <div className="flex flex-col gap-1 rounded-rally bg-surface-overlay p-3">
+              <span className="text-xs font-medium uppercase tracking-wider text-text-secondary">
                 Total Frontline
               </span>
-              <span className="text-2xl font-bold text-[var(--text-primary)] tabular-nums">
+              <span className="text-2xl font-bold text-text-primary tabular-nums">
                 {agingAnalysis.total}
               </span>
             </div>
             {/* Under 30 Days */}
-            <div className="flex flex-col gap-1 rounded-[var(--radius-rally)] bg-[var(--surface-overlay)] p-3">
-              <span className="text-xs font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+            <div className="flex flex-col gap-1 rounded-rally bg-surface-overlay p-3">
+              <span className="text-xs font-medium uppercase tracking-wider text-text-secondary">
                 Under 30 Days
               </span>
-              <span className="text-2xl font-bold text-[var(--status-success)] tabular-nums">
+              <span className="text-2xl font-bold text-status-success tabular-nums">
                 {agingAnalysis.under30}
               </span>
-              <div className="mt-1 h-1 w-full rounded-full bg-[var(--surface-border)]">
+              <div className="mt-1 h-1 w-full rounded-full bg-surface-border">
                 <div
-                  className="h-1 rounded-full bg-[var(--status-success)] transition-all"
+                  className="h-1 rounded-full bg-status-success transition-all"
                   style={{
                     width: agingAnalysis.total > 0
                       ? `${(agingAnalysis.under30 / agingAnalysis.total) * 100}%`
@@ -349,16 +349,16 @@ export default function InventoryOversightPage() {
               </div>
             </div>
             {/* 30-60 Days */}
-            <div className="flex flex-col gap-1 rounded-[var(--radius-rally)] bg-[var(--surface-overlay)] p-3">
-              <span className="text-xs font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+            <div className="flex flex-col gap-1 rounded-rally bg-surface-overlay p-3">
+              <span className="text-xs font-medium uppercase tracking-wider text-text-secondary">
                 30-60 Days
               </span>
-              <span className="text-2xl font-bold text-[var(--status-warning)] tabular-nums">
+              <span className="text-2xl font-bold text-status-warning tabular-nums">
                 {agingAnalysis.from30to60}
               </span>
-              <div className="mt-1 h-1 w-full rounded-full bg-[var(--surface-border)]">
+              <div className="mt-1 h-1 w-full rounded-full bg-surface-border">
                 <div
-                  className="h-1 rounded-full bg-[var(--status-warning)] transition-all"
+                  className="h-1 rounded-full bg-status-warning transition-all"
                   style={{
                     width: agingAnalysis.total > 0
                       ? `${(agingAnalysis.from30to60 / agingAnalysis.total) * 100}%`
@@ -368,14 +368,14 @@ export default function InventoryOversightPage() {
               </div>
             </div>
             {/* 60-90 Days */}
-            <div className="flex flex-col gap-1 rounded-[var(--radius-rally)] bg-[var(--surface-overlay)] p-3">
-              <span className="text-xs font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+            <div className="flex flex-col gap-1 rounded-rally bg-surface-overlay p-3">
+              <span className="text-xs font-medium uppercase tracking-wider text-text-secondary">
                 60-90 Days
               </span>
               <span className="text-2xl font-bold text-orange-400 tabular-nums">
                 {agingAnalysis.from60to90}
               </span>
-              <div className="mt-1 h-1 w-full rounded-full bg-[var(--surface-border)]">
+              <div className="mt-1 h-1 w-full rounded-full bg-surface-border">
                 <div
                   className="h-1 rounded-full bg-orange-500 transition-all"
                   style={{
@@ -387,16 +387,16 @@ export default function InventoryOversightPage() {
               </div>
             </div>
             {/* 90+ Days */}
-            <div className="flex flex-col gap-1 rounded-[var(--radius-rally)] bg-[var(--surface-overlay)] p-3">
-              <span className="text-xs font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+            <div className="flex flex-col gap-1 rounded-rally bg-surface-overlay p-3">
+              <span className="text-xs font-medium uppercase tracking-wider text-text-secondary">
                 90+ Days
               </span>
-              <span className="text-2xl font-bold text-[var(--status-error)] tabular-nums">
+              <span className="text-2xl font-bold text-status-error tabular-nums">
                 {agingAnalysis.over90}
               </span>
-              <div className="mt-1 h-1 w-full rounded-full bg-[var(--surface-border)]">
+              <div className="mt-1 h-1 w-full rounded-full bg-surface-border">
                 <div
-                  className="h-1 rounded-full bg-[var(--status-error)] transition-all"
+                  className="h-1 rounded-full bg-status-error transition-all"
                   style={{
                     width: agingAnalysis.total > 0
                       ? `${(agingAnalysis.over90 / agingAnalysis.total) * 100}%`
@@ -416,39 +416,39 @@ export default function InventoryOversightPage() {
         <CardHeader>
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-orange-400" />
-            <h2 className="text-sm font-semibold text-[var(--text-primary)]">
+            <h2 className="text-sm font-semibold text-text-primary">
               Stale Vehicles
             </h2>
             <Badge variant="warning" size="sm">
               {staleVehicles.length}
             </Badge>
           </div>
-          <p className="text-xs text-[var(--text-tertiary)]">
+          <p className="text-xs text-text-tertiary">
             Vehicles with more than 60 days on lot
           </p>
         </CardHeader>
         <CardContent>
           {staleVehicles.length === 0 ? (
             <div className="flex items-center gap-2 py-4 justify-center">
-              <CheckCircle2 className="h-5 w-5 text-[var(--status-success)]" />
-              <span className="text-sm text-[var(--text-secondary)]">
+              <CheckCircle2 className="h-5 w-5 text-status-success" />
+              <span className="text-sm text-text-secondary">
                 No aging inventory issues
               </span>
             </div>
           ) : (
-            <div className="flex flex-col divide-y divide-[var(--surface-border)]">
+            <div className="flex flex-col divide-y divide-surface-border">
               {staleVehicles.map((v) => (
                 <div
                   key={v.id ?? v.vin}
                   className="flex items-center gap-3 py-2.5"
                 >
                   {/* Stock number */}
-                  <span className="font-mono text-sm font-bold text-[var(--rally-gold)] min-w-[72px]">
+                  <span className="font-mono text-sm font-bold text-rally-gold min-w-[72px]">
                     {v.stockNumber}
                   </span>
 
                   {/* YMM */}
-                  <span className="flex-1 text-sm text-[var(--text-primary)] truncate">
+                  <span className="flex-1 text-sm text-text-primary truncate">
                     {v.year} {v.make} {v.model}
                   </span>
 
@@ -463,7 +463,7 @@ export default function InventoryOversightPage() {
                   <StatusBadge status={v.status} size="sm" />
 
                   {/* Price */}
-                  <span className="text-sm text-[var(--text-secondary)] tabular-nums min-w-[80px] text-right">
+                  <span className="text-sm text-text-secondary tabular-nums min-w-[80px] text-right">
                     {formatPrice(v.internetPrice)}
                   </span>
                 </div>
@@ -481,8 +481,8 @@ export default function InventoryOversightPage() {
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
-              <Camera className="h-4 w-4 text-[var(--text-tertiary)]" />
-              <h2 className="text-sm font-semibold text-[var(--text-primary)]">
+              <Camera className="h-4 w-4 text-text-tertiary" />
+              <h2 className="text-sm font-semibold text-text-primary">
                 Missing Photos
               </h2>
               {vehiclesWithoutPhotos.length > 0 && (
@@ -491,15 +491,15 @@ export default function InventoryOversightPage() {
                 </Badge>
               )}
             </div>
-            <p className="text-xs text-[var(--text-tertiary)]">
+            <p className="text-xs text-text-tertiary">
               Vehicles with no primary photo or gallery
             </p>
           </CardHeader>
           <CardContent>
             {vehiclesWithoutPhotos.length === 0 ? (
               <div className="flex items-center gap-2 py-4 justify-center">
-                <CheckCircle2 className="h-5 w-5 text-[var(--status-success)]" />
-                <span className="text-sm text-[var(--text-secondary)]">
+                <CheckCircle2 className="h-5 w-5 text-status-success" />
+                <span className="text-sm text-text-secondary">
                   All vehicles have photos
                 </span>
               </div>
@@ -508,13 +508,13 @@ export default function InventoryOversightPage() {
                 {vehiclesWithoutPhotos.slice(0, 20).map((v) => (
                   <span
                     key={v.id ?? v.vin}
-                    className="inline-flex items-center rounded-[var(--radius-rally)] bg-[var(--surface-overlay)] px-2.5 py-1 font-mono text-xs font-medium text-[var(--rally-gold)]"
+                    className="inline-flex items-center rounded-rally bg-surface-overlay px-2.5 py-1 font-mono text-xs font-medium text-rally-gold"
                   >
                     {v.stockNumber}
                   </span>
                 ))}
                 {vehiclesWithoutPhotos.length > 20 && (
-                  <span className="inline-flex items-center rounded-[var(--radius-rally)] bg-[var(--surface-overlay)] px-2.5 py-1 text-xs text-[var(--text-tertiary)]">
+                  <span className="inline-flex items-center rounded-rally bg-surface-overlay px-2.5 py-1 text-xs text-text-tertiary">
                     +{vehiclesWithoutPhotos.length - 20} more
                   </span>
                 )}
@@ -527,8 +527,8 @@ export default function InventoryOversightPage() {
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
-              <Lock className="h-4 w-4 text-[var(--text-tertiary)]" />
-              <h2 className="text-sm font-semibold text-[var(--text-primary)]">
+              <Lock className="h-4 w-4 text-text-tertiary" />
+              <h2 className="text-sm font-semibold text-text-primary">
                 On Hold
               </h2>
               {vehiclesOnHold.length > 0 && (
@@ -537,19 +537,19 @@ export default function InventoryOversightPage() {
                 </Badge>
               )}
             </div>
-            <p className="text-xs text-[var(--text-tertiary)]">
+            <p className="text-xs text-text-tertiary">
               Vehicles currently held for customers
             </p>
           </CardHeader>
           <CardContent>
             {vehiclesOnHold.length === 0 ? (
               <div className="flex items-center gap-2 py-4 justify-center">
-                <span className="text-sm text-[var(--text-secondary)]">
+                <span className="text-sm text-text-secondary">
                   No vehicles on hold
                 </span>
               </div>
             ) : (
-              <div className="flex flex-col divide-y divide-[var(--surface-border)]">
+              <div className="flex flex-col divide-y divide-surface-border">
                 {vehiclesOnHold.map((v) => {
                   const hold = v.holdInfo;
                   if (!hold) return null;
@@ -567,19 +567,19 @@ export default function InventoryOversightPage() {
                       className="flex items-center gap-3 py-2.5"
                     >
                       {/* Stock number */}
-                      <span className="font-mono text-sm font-bold text-[var(--rally-gold)] min-w-[72px]">
+                      <span className="font-mono text-sm font-bold text-rally-gold min-w-[72px]">
                         {v.stockNumber}
                       </span>
 
                       {/* Customer info */}
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm text-[var(--text-primary)] truncate">
+                        <p className="text-sm text-text-primary truncate">
                           {hold.customerName ?? 'Unknown Customer'}
                         </p>
-                        <p className="text-xs text-[var(--text-tertiary)]">
+                        <p className="text-xs text-text-tertiary">
                           Expires: {expiresAt}
                           {isExpired && (
-                            <span className="ml-1 text-[var(--status-error)] font-medium">
+                            <span className="ml-1 text-status-error font-medium">
                               EXPIRED
                             </span>
                           )}
@@ -587,7 +587,7 @@ export default function InventoryOversightPage() {
                       </div>
 
                       {/* Hold age */}
-                      <span className={`text-xs tabular-nums ${age > 3 ? 'text-[var(--status-warning)]' : 'text-[var(--text-secondary)]'}`}>
+                      <span className={`text-xs tabular-nums ${age > 3 ? 'text-status-warning' : 'text-text-secondary'}`}>
                         {age}d held
                       </span>
                     </div>

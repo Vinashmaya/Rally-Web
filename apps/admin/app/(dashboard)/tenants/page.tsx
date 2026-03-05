@@ -101,13 +101,13 @@ function TenantActionMenu({
 }) {
   return (
     <div
-      className="absolute right-0 top-full mt-1 z-50 w-48 rounded-[var(--radius-rally-lg)] bg-[var(--surface-overlay)] border border-[var(--surface-border)] shadow-xl py-1"
+      className="absolute right-0 top-full mt-1 z-50 w-48 rounded-rally-lg bg-surface-overlay border border-surface-border shadow-xl py-1"
       onMouseLeave={onClose}
     >
       {tenant.status !== 'active' && (
         <button
           type="button"
-          className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-border)] hover:text-[var(--text-primary)] transition-colors"
+          className="flex w-full items-center gap-2 px-3 py-2 text-sm text-text-secondary hover:bg-surface-border hover:text-text-primary transition-colors"
           onClick={(e) => {
             e.stopPropagation();
             onAction(tenant.id, 'activate');
@@ -121,7 +121,7 @@ function TenantActionMenu({
       {tenant.status === 'active' && (
         <button
           type="button"
-          className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--status-warning)] hover:bg-[var(--surface-border)] transition-colors"
+          className="flex w-full items-center gap-2 px-3 py-2 text-sm text-status-warning hover:bg-surface-border transition-colors"
           onClick={(e) => {
             e.stopPropagation();
             onAction(tenant.id, 'suspend');
@@ -132,10 +132,10 @@ function TenantActionMenu({
           Suspend
         </button>
       )}
-      <div className="my-1 border-t border-[var(--surface-border)]" />
+      <div className="my-1 border-t border-surface-border" />
       <button
         type="button"
-        className="flex w-full items-center gap-2 px-3 py-2 text-sm text-[var(--status-error)] hover:bg-[var(--surface-border)] transition-colors"
+        className="flex w-full items-center gap-2 px-3 py-2 text-sm text-status-error hover:bg-surface-border transition-colors"
         onClick={(e) => {
           e.stopPropagation();
           if (window.confirm(`Are you sure you want to deprovision "${tenant.groupName}"? This action cannot be undone.`)) {

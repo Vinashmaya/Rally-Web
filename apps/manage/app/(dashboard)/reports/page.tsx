@@ -148,8 +148,8 @@ function DateRangeSelector({
     <Card>
       <CardHeader>
         <div className="flex items-center gap-2">
-          <Calendar className="h-4 w-4 text-[var(--text-tertiary)]" />
-          <h2 className="text-sm font-semibold text-[var(--text-primary)]">
+          <Calendar className="h-4 w-4 text-text-tertiary" />
+          <h2 className="text-sm font-semibold text-text-primary">
             Date Range
           </h2>
         </div>
@@ -161,7 +161,7 @@ function DateRangeSelector({
             <div className="flex flex-col gap-1.5 flex-1">
               <label
                 htmlFor="report-start-date"
-                className="text-xs font-medium uppercase tracking-wider text-[var(--text-secondary)]"
+                className="text-xs font-medium uppercase tracking-wider text-text-secondary"
               >
                 Start
               </label>
@@ -170,14 +170,14 @@ function DateRangeSelector({
                 type="date"
                 value={startDate}
                 onChange={(e) => onStartChange(e.target.value)}
-                className="flex h-10 w-full rounded-rally bg-[var(--surface-overlay)] border border-[var(--surface-border)] px-3 py-2 text-sm text-[var(--text-primary)] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--rally-gold)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-base)] [color-scheme:dark]"
+                className="flex h-10 w-full rounded-rally bg-surface-overlay border border-surface-border px-3 py-2 text-sm text-text-primary transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rally-gold focus-visible:ring-offset-2 focus-visible:ring-offset-surface-base [color-scheme:dark]"
               />
             </div>
-            <span className="text-[var(--text-tertiary)] mt-6">to</span>
+            <span className="text-text-tertiary mt-6">to</span>
             <div className="flex flex-col gap-1.5 flex-1">
               <label
                 htmlFor="report-end-date"
-                className="text-xs font-medium uppercase tracking-wider text-[var(--text-secondary)]"
+                className="text-xs font-medium uppercase tracking-wider text-text-secondary"
               >
                 End
               </label>
@@ -186,7 +186,7 @@ function DateRangeSelector({
                 type="date"
                 value={endDate}
                 onChange={(e) => onEndChange(e.target.value)}
-                className="flex h-10 w-full rounded-rally bg-[var(--surface-overlay)] border border-[var(--surface-border)] px-3 py-2 text-sm text-[var(--text-primary)] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--rally-gold)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-base)] [color-scheme:dark]"
+                className="flex h-10 w-full rounded-rally bg-surface-overlay border border-surface-border px-3 py-2 text-sm text-text-primary transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rally-gold focus-visible:ring-offset-2 focus-visible:ring-offset-surface-base [color-scheme:dark]"
               />
             </div>
           </div>
@@ -226,18 +226,18 @@ function ReportCard({ template, dateRange }: ReportCardProps) {
     <Card>
       <CardHeader>
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-rally-lg bg-[var(--surface-overlay)] shrink-0">
-            <Icon className="h-5 w-5 text-[var(--rally-gold)]" />
+          <div className="flex h-10 w-10 items-center justify-center rounded-rally-lg bg-surface-overlay shrink-0">
+            <Icon className="h-5 w-5 text-rally-gold" />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+            <h3 className="text-sm font-semibold text-text-primary">
               {template.title}
             </h3>
           </div>
         </div>
       </CardHeader>
       <CardContent>
-        <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+        <p className="text-xs text-text-secondary leading-relaxed">
           {template.description}
         </p>
         <div className="mt-3">
@@ -298,8 +298,8 @@ export default function ReportsPage() {
     <div className="p-6 space-y-6">
       {/* Page Header */}
       <div>
-        <h1 className="text-2xl font-bold text-[var(--text-primary)]">Reports</h1>
-        <p className="text-sm text-[var(--text-secondary)] mt-1">
+        <h1 className="text-2xl font-bold text-text-primary">Reports</h1>
+        <p className="text-sm text-text-secondary mt-1">
           Generate and export dealership reports
         </p>
       </div>
@@ -325,7 +325,7 @@ export default function ReportsPage() {
       </div>
 
       {/* Footer note */}
-      <p className="text-xs text-[var(--text-tertiary)] text-center pt-2">
+      <p className="text-xs text-text-tertiary text-center pt-2">
         Report exports will be available in a future update.
       </p>
     </div>

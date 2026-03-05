@@ -55,10 +55,10 @@ export default function AdminLoginPage() {
     <div className="flex flex-col gap-8">
       {/* Header */}
       <div className="flex flex-col items-center gap-2">
-        <h1 className="text-4xl font-bold font-mono text-[var(--rally-gold)] tracking-tight">
+        <h1 className="text-4xl font-bold font-mono text-rally-gold tracking-tight">
           RALLY
         </h1>
-        <p className="text-sm text-[var(--text-secondary)] flex items-center gap-1.5">
+        <p className="text-sm text-text-secondary flex items-center gap-1.5">
           <ShieldAlert className="h-3.5 w-3.5" />
           Super Admin
         </p>
@@ -93,7 +93,7 @@ export default function AdminLoginPage() {
           Sign In
         </Button>
 
-        <p className="text-xs text-[var(--text-tertiary)] text-center">
+        <p className="text-xs text-text-tertiary text-center">
           Restricted access. Super admin only.
         </p>
       </form>

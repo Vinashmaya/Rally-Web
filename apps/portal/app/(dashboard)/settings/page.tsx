@@ -39,11 +39,11 @@ interface SettingRowProps {
 function SettingRow({ icon: Icon, label, value }: SettingRowProps) {
   return (
     <div className="flex items-center gap-3 py-3">
-      <Icon className="h-4 w-4 text-[var(--text-tertiary)] shrink-0" />
-      <span className="text-xs font-medium uppercase tracking-wider text-[var(--text-secondary)] w-28 shrink-0">
+      <Icon className="h-4 w-4 text-text-tertiary shrink-0" />
+      <span className="text-xs font-medium uppercase tracking-wider text-text-secondary w-28 shrink-0">
         {label}
       </span>
-      <span className="text-sm text-[var(--text-primary)] truncate">{value}</span>
+      <span className="text-sm text-text-primary truncate">{value}</span>
     </div>
   );
 }
@@ -64,10 +64,10 @@ interface ToggleRowProps {
 function ToggleRow({ icon: Icon, label, description, checked, onChange, disabled }: ToggleRowProps) {
   return (
     <div className="flex items-center gap-3 py-3">
-      <Icon className="h-4 w-4 text-[var(--text-tertiary)] shrink-0" />
+      <Icon className="h-4 w-4 text-text-tertiary shrink-0" />
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-[var(--text-primary)]">{label}</p>
-        <p className="text-xs text-[var(--text-tertiary)]">{description}</p>
+        <p className="text-sm font-medium text-text-primary">{label}</p>
+        <p className="text-xs text-text-tertiary">{description}</p>
       </div>
       <button
         type="button"
@@ -77,8 +77,8 @@ function ToggleRow({ icon: Icon, label, description, checked, onChange, disabled
         disabled={disabled}
         className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
           checked
-            ? 'bg-[var(--rally-gold)]'
-            : 'bg-[var(--surface-border)]'
+            ? 'bg-rally-gold'
+            : 'bg-surface-border'
         }`}
       >
         <span
@@ -171,7 +171,7 @@ export default function PortalSettingsPage() {
   if (isLoading) {
     return (
       <div className="flex flex-col gap-6">
-        <h1 className="text-2xl font-bold text-[var(--text-primary)]">Settings</h1>
+        <h1 className="text-2xl font-bold text-text-primary">Settings</h1>
         <SettingsSkeleton />
       </div>
     );
@@ -192,7 +192,7 @@ export default function PortalSettingsPage() {
   return (
     <div className="flex flex-col gap-6">
       {/* Page Header */}
-      <h1 className="text-2xl font-bold text-[var(--text-primary)]">Settings</h1>
+      <h1 className="text-2xl font-bold text-text-primary">Settings</h1>
 
       {/* Profile header */}
       <div className="flex items-center gap-4">
@@ -202,7 +202,7 @@ export default function PortalSettingsPage() {
           size="lg"
         />
         <div className="flex flex-col gap-1">
-          <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+          <h2 className="text-lg font-semibold text-text-primary">
             {displayName}
           </h2>
           <Badge variant="gold" size="sm">
@@ -214,16 +214,16 @@ export default function PortalSettingsPage() {
       {/* Profile Section */}
       <Card>
         <CardHeader>
-          <h2 className="text-sm font-semibold text-[var(--text-primary)]">Profile</h2>
+          <h2 className="text-sm font-semibold text-text-primary">Profile</h2>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col divide-y divide-[var(--surface-border)]">
+          <div className="flex flex-col divide-y divide-surface-border">
             <SettingRow icon={User} label="Name" value={displayName} />
             <SettingRow icon={Mail} label="Email" value={email} />
             <SettingRow icon={Phone} label="Phone" value={phone} />
             <SettingRow icon={Shield} label="Role" value={roleDisplay} />
           </div>
-          <p className="mt-3 text-xs text-[var(--text-tertiary)]">
+          <p className="mt-3 text-xs text-text-tertiary">
             Profile information is managed by your administrator.
           </p>
         </CardContent>
@@ -232,10 +232,10 @@ export default function PortalSettingsPage() {
       {/* Preferences */}
       <Card>
         <CardHeader>
-          <h2 className="text-sm font-semibold text-[var(--text-primary)]">Preferences</h2>
+          <h2 className="text-sm font-semibold text-text-primary">Preferences</h2>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col divide-y divide-[var(--surface-border)]">
+          <div className="flex flex-col divide-y divide-surface-border">
             <ToggleRow
               icon={Map}
               label="Satellite Map View"
@@ -264,12 +264,12 @@ export default function PortalSettingsPage() {
       {activeStore && (
         <Card>
           <CardHeader>
-            <h2 className="text-sm font-semibold text-[var(--text-primary)]">
+            <h2 className="text-sm font-semibold text-text-primary">
               Current Store
             </h2>
           </CardHeader>
           <CardContent>
-            <div className="flex flex-col divide-y divide-[var(--surface-border)]">
+            <div className="flex flex-col divide-y divide-surface-border">
               <SettingRow icon={Building2} label="Store" value={activeStore.name} />
               <SettingRow
                 icon={MapPin}

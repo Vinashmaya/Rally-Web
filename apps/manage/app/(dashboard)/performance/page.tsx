@@ -103,7 +103,7 @@ function PerformanceSkeleton() {
 // ---------------------------------------------------------------------------
 
 function getHeatmapColor(count: number, maxCount: number): string {
-  if (maxCount === 0 || count === 0) return 'bg-[var(--surface-overlay)]';
+  if (maxCount === 0 || count === 0) return 'bg-surface-overlay';
   const ratio = count / maxCount;
   if (ratio > 0.75) return 'bg-red-500';
   if (ratio > 0.5) return 'bg-orange-500';
@@ -268,7 +268,7 @@ export default function PerformancePage() {
       {/* ----------------------------------------------------------------- */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold text-[var(--text-primary)]">
+          <h1 className="text-2xl font-bold text-text-primary">
             Performance
           </h1>
           <Badge variant="default" size="sm">
@@ -286,15 +286,15 @@ export default function PerformancePage() {
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
-            <Crown className="h-4 w-4 text-[var(--rally-gold)]" />
-            <h2 className="text-sm font-semibold text-[var(--text-primary)]">
+            <Crown className="h-4 w-4 text-rally-gold" />
+            <h2 className="text-sm font-semibold text-text-primary">
               Team Leaderboard
             </h2>
           </div>
         </CardHeader>
         <CardContent>
           {leaderboard.length === 0 ? (
-            <p className="text-sm text-[var(--text-tertiary)] text-center py-4">
+            <p className="text-sm text-text-tertiary text-center py-4">
               No team activity yet.
             </p>
           ) : (
@@ -315,8 +315,8 @@ export default function PerformancePage() {
                     <span
                       className={`w-6 text-sm font-bold tabular-nums text-right ${
                         isTop
-                          ? 'text-[var(--rally-gold)]'
-                          : 'text-[var(--text-tertiary)]'
+                          ? 'text-rally-gold'
+                          : 'text-text-tertiary'
                       }`}
                     >
                       {index + 1}
@@ -327,7 +327,7 @@ export default function PerformancePage() {
 
                     {/* Name + badge */}
                     <div className="flex items-center gap-2 min-w-[140px]">
-                      <span className="text-sm font-medium text-[var(--text-primary)] truncate">
+                      <span className="text-sm font-medium text-text-primary truncate">
                         {entry.name}
                       </span>
                       {isTop && (
@@ -338,19 +338,19 @@ export default function PerformancePage() {
                     </div>
 
                     {/* Bar */}
-                    <div className="flex-1 h-5 rounded-[var(--radius-rally)] bg-[var(--surface-overlay)] overflow-hidden">
+                    <div className="flex-1 h-5 rounded-rally bg-surface-overlay overflow-hidden">
                       <div
-                        className={`h-full rounded-[var(--radius-rally)] transition-all duration-500 ${
+                        className={`h-full rounded-rally transition-all duration-500 ${
                           isTop
-                            ? 'bg-[var(--rally-gold)]'
-                            : 'bg-[var(--rally-gold)]/40'
+                            ? 'bg-rally-gold'
+                            : 'bg-rally-gold/40'
                         }`}
                         style={{ width: `${barWidth}%` }}
                       />
                     </div>
 
                     {/* Count */}
-                    <span className="text-sm font-bold tabular-nums text-[var(--text-primary)] min-w-[32px] text-right">
+                    <span className="text-sm font-bold tabular-nums text-text-primary min-w-[32px] text-right">
                       {entry.count}
                     </span>
                   </div>
@@ -366,7 +366,7 @@ export default function PerformancePage() {
       {/* ----------------------------------------------------------------- */}
       <Card>
         <CardHeader>
-          <h2 className="text-sm font-semibold text-[var(--text-primary)]">
+          <h2 className="text-sm font-semibold text-text-primary">
             Activity Breakdown
           </h2>
         </CardHeader>
@@ -380,11 +380,11 @@ export default function PerformancePage() {
               return (
                 <div
                   key={state}
-                  className={`flex flex-col gap-2 rounded-[var(--radius-rally-lg)] ${config.bgClass} border border-transparent p-3`}
+                  className={`flex flex-col gap-2 rounded-rally-lg ${config.bgClass} border border-transparent p-3`}
                 >
                   <div className="flex items-center gap-2">
                     <Icon className={`h-4 w-4 ${config.colorClass}`} />
-                    <span className="text-xs font-medium text-[var(--text-secondary)]">
+                    <span className="text-xs font-medium text-text-secondary">
                       {ACTIVITY_DISPLAY_NAME[state]}
                     </span>
                   </div>
@@ -406,12 +406,12 @@ export default function PerformancePage() {
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
-              <BarChart3 className="h-4 w-4 text-[var(--text-tertiary)]" />
-              <h2 className="text-sm font-semibold text-[var(--text-primary)]">
+              <BarChart3 className="h-4 w-4 text-text-tertiary" />
+              <h2 className="text-sm font-semibold text-text-primary">
                 Activity Timeline
               </h2>
             </div>
-            <p className="text-xs text-[var(--text-tertiary)]">
+            <p className="text-xs text-text-tertiary">
               Last 7 days
             </p>
           </CardHeader>
@@ -429,16 +429,16 @@ export default function PerformancePage() {
                     className="flex-1 flex flex-col items-center gap-1 h-full justify-end"
                   >
                     {/* Count label */}
-                    <span className="text-[10px] font-medium tabular-nums text-[var(--text-secondary)]">
+                    <span className="text-[10px] font-medium tabular-nums text-text-secondary">
                       {day.count > 0 ? day.count : ''}
                     </span>
                     {/* Bar */}
                     <div
-                      className="w-full rounded-t-[var(--radius-rally)] bg-[var(--rally-gold)] transition-all duration-500 min-h-[2px]"
+                      className="w-full rounded-t-rally bg-rally-gold transition-all duration-500 min-h-[2px]"
                       style={{ height: `${Math.max(heightPct, 2)}%` }}
                     />
                     {/* Day label */}
-                    <span className="text-[10px] text-[var(--text-tertiary)]">
+                    <span className="text-[10px] text-text-tertiary">
                       {day.label}
                     </span>
                   </div>
@@ -452,12 +452,12 @@ export default function PerformancePage() {
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4 text-[var(--text-tertiary)]" />
-              <h2 className="text-sm font-semibold text-[var(--text-primary)]">
+              <Clock className="h-4 w-4 text-text-tertiary" />
+              <h2 className="text-sm font-semibold text-text-primary">
                 Peak Hours
               </h2>
             </div>
-            <p className="text-xs text-[var(--text-tertiary)]">
+            <p className="text-xs text-text-tertiary">
               Activity by hour of day
             </p>
           </CardHeader>
@@ -472,8 +472,8 @@ export default function PerformancePage() {
                     title={`${hour}:00 — ${count} activities`}
                   >
                     {/* Tooltip on hover */}
-                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:flex items-center px-2 py-1 rounded bg-[var(--surface-raised)] border border-[var(--surface-border)] shadow-lg z-10 whitespace-nowrap">
-                      <span className="text-[10px] text-[var(--text-primary)]">
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:flex items-center px-2 py-1 rounded bg-surface-raised border border-surface-border shadow-lg z-10 whitespace-nowrap">
+                      <span className="text-[10px] text-text-primary">
                         {hour.toString().padStart(2, '0')}:00 &mdash; {count}
                       </span>
                     </div>
@@ -486,7 +486,7 @@ export default function PerformancePage() {
                 {[0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22].map((h) => (
                   <span
                     key={h}
-                    className="text-[9px] text-[var(--text-tertiary)] text-center tabular-nums"
+                    className="text-[9px] text-text-tertiary text-center tabular-nums"
                   >
                     {h.toString().padStart(2, '0')}
                   </span>
@@ -495,15 +495,15 @@ export default function PerformancePage() {
 
               {/* Legend */}
               <div className="flex items-center gap-2 mt-1">
-                <span className="text-[10px] text-[var(--text-tertiary)]">Low</span>
+                <span className="text-[10px] text-text-tertiary">Low</span>
                 <div className="flex gap-0.5">
-                  <div className="h-3 w-3 rounded-[2px] bg-[var(--surface-overlay)]" />
+                  <div className="h-3 w-3 rounded-[2px] bg-surface-overlay" />
                   <div className="h-3 w-3 rounded-[2px] bg-emerald-500/60" />
                   <div className="h-3 w-3 rounded-[2px] bg-yellow-500" />
                   <div className="h-3 w-3 rounded-[2px] bg-orange-500" />
                   <div className="h-3 w-3 rounded-[2px] bg-red-500" />
                 </div>
-                <span className="text-[10px] text-[var(--text-tertiary)]">High</span>
+                <span className="text-[10px] text-text-tertiary">High</span>
               </div>
             </div>
           </CardContent>

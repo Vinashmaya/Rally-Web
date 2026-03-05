@@ -140,10 +140,10 @@ function truncateVin(vin: string | undefined): string {
 }
 
 function getAgingColor(days: number): string {
-  if (days >= 90) return 'text-[var(--status-error)]';
+  if (days >= 90) return 'text-status-error';
   if (days >= 60) return 'text-orange-400';
-  if (days >= 30) return 'text-[var(--status-warning)]';
-  return 'text-[var(--text-secondary)]';
+  if (days >= 30) return 'text-status-warning';
+  return 'text-text-secondary';
 }
 
 // ---------------------------------------------------------------------------
@@ -153,8 +153,8 @@ function getAgingColor(days: number): string {
 function VehicleThumb({ url, alt }: { url?: string; alt: string }) {
   if (!url) {
     return (
-      <div className="flex h-10 w-14 items-center justify-center rounded-[var(--radius-rally)] bg-[var(--surface-overlay)] border border-[var(--surface-border)]">
-        <ImageIcon className="h-4 w-4 text-[var(--text-disabled)]" />
+      <div className="flex h-10 w-14 items-center justify-center rounded-rally bg-surface-overlay border border-surface-border">
+        <ImageIcon className="h-4 w-4 text-text-disabled" />
       </div>
     );
   }
@@ -163,7 +163,7 @@ function VehicleThumb({ url, alt }: { url?: string; alt: string }) {
     <img
       src={url}
       alt={alt}
-      className="h-10 w-14 rounded-[var(--radius-rally)] object-cover border border-[var(--surface-border)]"
+      className="h-10 w-14 rounded-rally object-cover border border-surface-border"
     />
   );
 }
@@ -191,7 +191,7 @@ const columns: ColumnDef<SystemVehicle, unknown>[] = [
     accessorKey: 'stockNumber',
     header: 'Stock #',
     cell: ({ row }) => (
-      <span className="font-[family-name:var(--font-geist-mono)] font-bold text-[var(--rally-gold)]">
+      <span className="font-[family-name:var(--font-geist-mono)] font-bold text-rally-gold">
         {row.original.stockNumber}
       </span>
     ),
@@ -204,11 +204,11 @@ const columns: ColumnDef<SystemVehicle, unknown>[] = [
       const v = row.original;
       return (
         <div className="min-w-0">
-          <p className="text-sm font-medium text-[var(--text-primary)] truncate">
+          <p className="text-sm font-medium text-text-primary truncate">
             {v.year} {v.make} {v.model}
           </p>
           {v.trim && (
-            <p className="text-xs text-[var(--text-tertiary)] truncate">
+            <p className="text-xs text-text-tertiary truncate">
               {v.trim}{v.color ? ` \u2022 ${v.color}` : ''}
             </p>
           )}
@@ -221,7 +221,7 @@ const columns: ColumnDef<SystemVehicle, unknown>[] = [
     header: 'VIN',
     cell: ({ row }) => (
       <span
-        className="text-xs font-[family-name:var(--font-geist-mono)] text-[var(--text-tertiary)]"
+        className="text-xs font-[family-name:var(--font-geist-mono)] text-text-tertiary"
         title={row.original.vin}
       >
         {truncateVin(row.original.vin)}
@@ -347,8 +347,8 @@ export default function SystemVehiclesPage() {
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Car className="h-6 w-6 text-[var(--rally-gold)]" />
-          <h1 className="text-2xl font-bold text-[var(--text-primary)]">
+          <Car className="h-6 w-6 text-rally-gold" />
+          <h1 className="text-2xl font-bold text-text-primary">
             System Vehicles
           </h1>
           <Badge variant="default" size="md">
@@ -357,7 +357,7 @@ export default function SystemVehiclesPage() {
         </div>
       </div>
 
-      <p className="text-sm text-[var(--text-secondary)]">
+      <p className="text-sm text-text-secondary">
         All vehicles across all tenants. Monitor inventory, status, and aging system-wide.
       </p>
 

@@ -1,4 +1,5 @@
 import { headers } from 'next/headers';
+import { redirect } from 'next/navigation';
 import { getAdminDb } from '@rally/firebase/admin';
 
 export const dynamic = 'force-dynamic';
@@ -7,6 +8,7 @@ export const dynamic = 'force-dynamic';
 // This is the public-facing landing/splash page for the dealer portal.
 // It reads the tenant slug from the middleware-set header and looks up
 // the group config from Firestore for branding.
+// Unknown slugs redirect to rally.vin.
 
 async function getGroupBySlug(slug: string): Promise<{ name: string; logoUrl?: string } | null> {
   try {
@@ -29,10 +31,13 @@ export default async function PortalLandingPage() {
 
   // Look up tenant from Firestore for proper branding
   const group = await getGroupBySlug(tenantSlug);
-  const tenantDisplayName = group?.name ?? tenantSlug
-    .split('-')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
+
+  // Unknown tenant slug → redirect to main site
+  if (!group) {
+    redirect('https://rally.vin');
+  }
+
+  const tenantDisplayName = group.name;
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-8">

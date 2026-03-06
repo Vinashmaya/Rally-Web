@@ -2,8 +2,30 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getAdminDb, requireSuperAdmin, isVerifiedSession, FieldValue } from '@rally/firebase/admin';
 import { lotGridConfigSchema } from '@rally/firebase';
+import type { LotSpace } from '@rally/firebase';
 
 export const dynamic = 'force-dynamic';
+
+// Firestore rejects nested arrays ([[lng,lat],...]).
+// Convert [lng,lat] tuples ↔ {lng,lat} objects at the API boundary.
+function spacesToFirestore(spaces: LotSpace[]) {
+  return spaces.map((s) => ({
+    ...s,
+    coordinates: s.coordinates.map((c) => ({ lng: c[0], lat: c[1] })),
+  }));
+}
+
+function spacesFromFirestore(spaces: unknown[]): LotSpace[] {
+  return spaces.map((raw) => {
+    const s = raw as Record<string, unknown>;
+    return {
+      ...s,
+      coordinates: ((s.coordinates ?? []) as { lng: number; lat: number }[]).map(
+        (c) => [c.lng, c.lat] as [number, number],
+      ),
+    } as LotSpace;
+  });
+}
 
 // GET — List lot configs for a specific store
 // Query params: groupId, storeId
@@ -32,10 +54,22 @@ export async function GET(request: NextRequest) {
       .orderBy('name')
       .get();
 
-    const configs = snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
+    const configs = snapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        // Convert {lng,lat} objects back to [lng,lat] tuples for the client
+        spaces: data.spaces ? spacesFromFirestore(data.spaces) : [],
+        // Also convert overlayCorners if stored as objects
+        overlayCorners: data.overlayCorners
+          ? (data.overlayCorners as { lng: number; lat: number }[]).map(
+              (c: { lng: number; lat: number }) =>
+                typeof c === 'object' && 'lng' in c ? [c.lng, c.lat] : c,
+            )
+          : data.overlayCorners,
+      };
+    });
 
     return NextResponse.json({ configs });
   } catch (err) {
@@ -66,6 +100,12 @@ export async function POST(request: NextRequest) {
 
     const { groupId, storeId, id, ...configData } = parsed.data;
 
+    // Convert coordinates to Firestore-safe format (no nested arrays)
+    const firestoreData = {
+      ...configData,
+      spaces: configData.spaces ? spacesToFirestore(configData.spaces) : [],
+    };
+
     const configsRef = getAdminDb()
       .collection('groups')
       .doc(groupId)
@@ -77,7 +117,7 @@ export async function POST(request: NextRequest) {
       // Update existing
       await configsRef.doc(id).set(
         {
-          ...configData,
+          ...firestoreData,
           groupId,
           storeId,
           updatedAt: FieldValue.serverTimestamp(),
@@ -88,7 +128,7 @@ export async function POST(request: NextRequest) {
     } else {
       // Create new
       const docRef = await configsRef.add({
-        ...configData,
+        ...firestoreData,
         groupId,
         storeId,
         createdAt: FieldValue.serverTimestamp(),

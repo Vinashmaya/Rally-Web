@@ -14,11 +14,14 @@ import { getAuth } from 'firebase-admin/auth';
 import type { Auth } from 'firebase-admin/auth';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import type { Firestore } from 'firebase-admin/firestore';
+import { getStorage } from 'firebase-admin/storage';
+import type { Storage } from 'firebase-admin/storage';
 
 // Cached singletons — populated on first call to getters
 let _app: App | undefined;
 let _auth: Auth | undefined;
 let _db: Firestore | undefined;
+let _storage: Storage | undefined;
 
 function getAdminApp(): App {
   if (!_app) {
@@ -45,9 +48,14 @@ function getAdminDb(): Firestore {
   return _db;
 }
 
+function getAdminStorage(): Storage {
+  if (!_storage) _storage = getStorage(getAdminApp());
+  return _storage;
+}
+
 // Named exports — callers use getAdminDb() and getAdminAuth() instead of
 // the old direct `adminDb` and `adminAuth` constants.
-export { getAdminApp, getAdminAuth, getAdminDb, FieldValue };
+export { getAdminApp, getAdminAuth, getAdminDb, getAdminStorage, FieldValue };
 
 // Auth guards — server-side route protection
 export {

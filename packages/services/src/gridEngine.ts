@@ -1,7 +1,8 @@
 // Grid Engine — coordinate transforms, cell calculations, grid-to-GeoJSON
 // Ported from Swift GridEngine.swift + GridModels.swift (GridNavApp)
 
-import type { GeoPoint, LotGrid, LotGridConfig } from '@rally/firebase';
+import type { GeoPoint, LotGrid, LotGridConfig, LotSpace, SpaceType } from '@rally/firebase';
+import { SPACE_TYPE_COLORS } from '@rally/firebase';
 import type { Feature, FeatureCollection } from 'geojson';
 
 // ---------------------------------------------------------------------------
@@ -265,3 +266,233 @@ export const DealerNameGenerator = {
     return `${this.listA[word1Idx]}-${this.listB[word2Idx]}`;
   },
 } as const;
+
+// ---------------------------------------------------------------------------
+// Grid → LotSpace[] converter (v1 → v2 bridge)
+// ---------------------------------------------------------------------------
+
+export interface GenerateSpacesOptions {
+  grid: LotGrid;
+  type?: SpaceType;
+  namingPattern?: 'dealer' | 'alpha-numeric' | 'numeric';
+  prefix?: string;
+}
+
+/** Convert grid parameters into individual LotSpace polygon objects. */
+export function generateSpacesFromGrid(options: GenerateSpacesOptions): LotSpace[] {
+  const { grid, type = 'standard', namingPattern = 'dealer', prefix = '' } = options;
+  const spaces: LotSpace[] = [];
+  const timestamp = Date.now();
+
+  for (let r = 0; r < grid.rows; r++) {
+    for (let c = 0; c < grid.cols; c++) {
+      const tl = getGridPoint(grid, r, c);
+      const tr = getGridPoint(grid, r, c + 1);
+      const br = getGridPoint(grid, r + 1, c + 1);
+      const bl = getGridPoint(grid, r + 1, c);
+
+      let name: string;
+      switch (namingPattern) {
+        case 'alpha-numeric': {
+          const rowLetter = String.fromCharCode(65 + (r % 26));
+          name = `${prefix}${rowLetter}${c + 1}`;
+          break;
+        }
+        case 'numeric': {
+          name = `${prefix}${r * grid.cols + c + 1}`;
+          break;
+        }
+        default: {
+          name = DealerNameGenerator.generate(c, r, grid.label);
+          break;
+        }
+      }
+
+      spaces.push({
+        id: `space-${timestamp}-${r}-${c}`,
+        name,
+        type,
+        coordinates: [tl, tr, br, bl, tl], // Closed polygon
+        status: 'available',
+        gridId: grid.id,
+      });
+    }
+  }
+
+  return spaces;
+}
+
+// ---------------------------------------------------------------------------
+// LotSpace[] → GeoJSON (for Mapbox polygon rendering)
+// ---------------------------------------------------------------------------
+
+/** Convert spaces to a GeoJSON FeatureCollection for map rendering. */
+export function generateSpacesGeoJSON(
+  spaces: LotSpace[],
+  selectedSpaceIds: Set<string> = new Set(),
+  hoveredSpaceId: string | null = null,
+): FeatureCollection {
+  const features: Feature[] = spaces.map((space) => ({
+    type: 'Feature' as const,
+    properties: {
+      id: space.id,
+      name: space.name,
+      type: space.type,
+      status: space.status,
+      color: space.color ?? SPACE_TYPE_COLORS[space.type],
+      isSelected: selectedSpaceIds.has(space.id),
+      isHovered: space.id === hoveredSpaceId,
+      vin: space.vin ?? null,
+      stockNumber: space.stockNumber ?? null,
+      label: space.label ?? space.name,
+    },
+    geometry: {
+      type: 'Polygon' as const,
+      coordinates: [space.coordinates],
+    },
+  }));
+
+  return { type: 'FeatureCollection', features };
+}
+
+// ---------------------------------------------------------------------------
+// Vertex GeoJSON — for edit-mode vertex handles
+// ---------------------------------------------------------------------------
+
+/** Generate GeoJSON Point features for each vertex of selected spaces. */
+export function generateVertexGeoJSON(
+  spaces: LotSpace[],
+  selectedSpaceIds: Set<string>,
+): FeatureCollection {
+  const features: Feature[] = [];
+
+  for (const space of spaces) {
+    if (!selectedSpaceIds.has(space.id)) continue;
+
+    // Skip closing vertex (same as first)
+    const vertices = space.coordinates.slice(0, -1);
+    for (let i = 0; i < vertices.length; i++) {
+      features.push({
+        type: 'Feature' as const,
+        properties: {
+          spaceId: space.id,
+          vertexIndex: i,
+          isVertex: true,
+        },
+        geometry: {
+          type: 'Point' as const,
+          coordinates: vertices[i]!,
+        },
+      });
+
+      // Midpoint between this vertex and the next
+      const next = vertices[(i + 1) % vertices.length]!;
+      const mid: [number, number] = [
+        (vertices[i]![0] + next[0]) / 2,
+        (vertices[i]![1] + next[1]) / 2,
+      ];
+      features.push({
+        type: 'Feature' as const,
+        properties: {
+          spaceId: space.id,
+          vertexIndex: i,
+          isMidpoint: true,
+        },
+        geometry: {
+          type: 'Point' as const,
+          coordinates: mid,
+        },
+      });
+    }
+  }
+
+  return { type: 'FeatureCollection', features };
+}
+
+// ---------------------------------------------------------------------------
+// Point-in-Polygon (ray casting)
+// ---------------------------------------------------------------------------
+
+/** Test if a [lng, lat] point is inside a polygon (closed coordinate ring). */
+export function pointInPolygon(
+  point: [number, number],
+  polygon: [number, number][],
+): boolean {
+  const [x, y] = point;
+  let inside = false;
+
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i]![0];
+    const yi = polygon[i]![1];
+    const xj = polygon[j]![0];
+    const yj = polygon[j]![1];
+
+    const intersect = yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
+    if (intersect) inside = !inside;
+  }
+
+  return inside;
+}
+
+/** Find which space (if any) a [lng, lat] point falls inside. Returns space ID or null. */
+export function getSpaceAtPoint(
+  spaces: LotSpace[],
+  point: [number, number],
+): string | null {
+  // Search in reverse so later (visually on-top) spaces take priority
+  for (let i = spaces.length - 1; i >= 0; i--) {
+    if (pointInPolygon(point, spaces[i]!.coordinates)) {
+      return spaces[i]!.id;
+    }
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Polygon Centroid
+// ---------------------------------------------------------------------------
+
+/** Calculate the centroid of a polygon (for label placement). */
+export function polygonCentroid(coordinates: [number, number][]): [number, number] {
+  // Use all vertices except closing duplicate
+  const verts = coordinates.length > 1 &&
+    coordinates[0]![0] === coordinates[coordinates.length - 1]![0] &&
+    coordinates[0]![1] === coordinates[coordinates.length - 1]![1]
+    ? coordinates.slice(0, -1)
+    : coordinates;
+
+  let sumX = 0;
+  let sumY = 0;
+  for (const v of verts) {
+    sumX += v[0];
+    sumY += v[1];
+  }
+  return [sumX / verts.length, sumY / verts.length];
+}
+
+// ---------------------------------------------------------------------------
+// Polygon Bounding Box
+// ---------------------------------------------------------------------------
+
+/** Get the bounding box of a set of spaces: [[minLng, minLat], [maxLng, maxLat]]. */
+export function spacesBoundingBox(
+  spaces: LotSpace[],
+): [[number, number], [number, number]] | null {
+  if (spaces.length === 0) return null;
+
+  let minLng = Infinity;
+  let minLat = Infinity;
+  let maxLng = -Infinity;
+  let maxLat = -Infinity;
+
+  for (const space of spaces) {
+    for (const [lng, lat] of space.coordinates) {
+      if (lng < minLng) minLng = lng;
+      if (lat < minLat) minLat = lat;
+      if (lng > maxLng) maxLng = lng;
+      if (lat > maxLat) maxLat = lat;
+    }
+  }
+
+  return [[minLng, minLat], [maxLng, maxLat]];
+}

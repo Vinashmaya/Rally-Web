@@ -28,7 +28,9 @@ export {
   useAuthStore,
   usePermissionStore,
   initPermissionSubscription,
+  useLotConfigStore,
 } from './stores';
+export type { EditorMode, SidebarPanel, ConfigSummary } from './stores';
 
 // Grid engine — coordinate transforms, cell calculations, GeoJSON generation
 export {
@@ -46,5 +48,13 @@ export {
   generateCellsGeoJSON,
   generateGridBoundaryGeoJSON,
   DealerNameGenerator,
+  // v2 polygon-based
+  generateSpacesFromGrid,
+  generateSpacesGeoJSON,
+  generateVertexGeoJSON,
+  pointInPolygon,
+  getSpaceAtPoint,
+  polygonCentroid,
+  spacesBoundingBox,
 } from './gridEngine';
-export type { GridHit } from './gridEngine';
+export type { GridHit, GenerateSpacesOptions } from './gridEngine';

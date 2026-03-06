@@ -113,6 +113,66 @@ export const lotImageOverlaySchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// LotSpace — individual parking space as a polygon (v2)
+// Replaces grid-computed cells with explicit coordinates per space.
+// ---------------------------------------------------------------------------
+
+export type SpaceType = 'standard' | 'handicap' | 'ev' | 'reserved' | 'service' | 'delivery';
+
+export const SPACE_TYPE_VALUES = ['standard', 'handicap', 'ev', 'reserved', 'service', 'delivery'] as const;
+
+export type SpaceStatus = 'available' | 'occupied' | 'blocked' | 'maintenance';
+
+export const SPACE_STATUS_VALUES = ['available', 'occupied', 'blocked', 'maintenance'] as const;
+
+/** Color map for space types — used by map rendering and UI */
+export const SPACE_TYPE_COLORS: Record<SpaceType, string> = {
+  standard: '#3b82f6',  // blue
+  handicap: '#8b5cf6',  // purple
+  ev: '#10b981',        // green
+  reserved: '#f59e0b',  // amber
+  service: '#ef4444',   // red
+  delivery: '#6366f1',  // indigo
+} as const;
+
+export const SPACE_TYPE_LABELS: Record<SpaceType, string> = {
+  standard: 'Standard',
+  handicap: 'Handicap',
+  ev: 'EV Charging',
+  reserved: 'Reserved',
+  service: 'Service',
+  delivery: 'Delivery',
+} as const;
+
+export interface LotSpace {
+  id: string;
+  name: string;                    // Radio name, e.g. "Alpha-1"
+  type: SpaceType;
+  coordinates: [number, number][]; // GeoJSON order: [lng, lat] — closed polygon (first === last)
+  status: SpaceStatus;
+  vin?: string;
+  stockNumber?: string;
+  color?: string;                  // Override color (null = use type default)
+  label?: string;                  // Custom display label
+  tags?: string[];                 // Grouping tags, e.g. ["front-row", "new-inventory"]
+  gridId?: string;                 // Source grid ID if generated from grid params
+}
+
+export const lotSpaceSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  type: z.enum(SPACE_TYPE_VALUES),
+  coordinates: z.array(z.tuple([z.number(), z.number()])).min(4), // min 3 vertices + closing vertex
+  status: z.enum(SPACE_STATUS_VALUES),
+  vin: z.string().optional(),
+  stockNumber: z.string().optional(),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  label: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  gridId: z.string().optional(),
+});
+
+// ---------------------------------------------------------------------------
 // LotGridConfig — top-level config document per store
 // ---------------------------------------------------------------------------
 
@@ -127,8 +187,11 @@ export interface LotGridConfig {
   zoom: number; // Mapbox zoom level (15-20 for lot)
   bearing: number; // Map rotation in degrees
 
-  // Grid overlays
+  // Grid overlays (v1 — kept for GridGeneratorPanel input)
   grids: LotGrid[];
+
+  // Polygon spaces (v2 — the rendered output)
+  spaces: LotSpace[];
 
   // Image overlays
   imageOverlays: LotImageOverlay[];
@@ -147,6 +210,7 @@ export const lotGridConfigSchema = z.object({
   zoom: z.number().min(1).max(22),
   bearing: z.number().min(-360).max(360),
   grids: z.array(lotGridSchema),
+  spaces: z.array(lotSpaceSchema).default([]),
   imageOverlays: z.array(lotImageOverlaySchema),
   createdAt: z.coerce.date().optional(),
   updatedAt: z.coerce.date().optional(),

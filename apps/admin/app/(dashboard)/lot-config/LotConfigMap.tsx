@@ -3,15 +3,16 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import type { LotGrid, LotGridConfig, LotImageOverlay, GeoPoint } from '@rally/firebase';
+import type { LotGridConfig, LotImageOverlay, GeoPoint } from '@rally/firebase';
 import {
-  generateGridLinesGeoJSON,
-  generateCellsGeoJSON,
-  DealerNameGenerator,
+  generateSpacesGeoJSON,
+  generateVertexGeoJSON,
+  getSpaceAtPoint,
   offsetLatLng,
   rotatePoint,
   getDeltaMeters,
 } from '@rally/services';
+import type { EditorMode } from '@rally/services';
 
 // ---------------------------------------------------------------------------
 // Token
@@ -20,61 +21,65 @@ import {
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? '';
 
 // ---------------------------------------------------------------------------
+// Source/Layer IDs
+// ---------------------------------------------------------------------------
+
+const SPACES_SOURCE = 'lot-spaces';
+const SPACES_FILL_LAYER = 'lot-spaces-fill';
+const SPACES_OUTLINE_LAYER = 'lot-spaces-outline';
+const SPACES_LABELS_LAYER = 'lot-spaces-labels';
+const VERTICES_SOURCE = 'lot-vertices';
+const VERTICES_LAYER = 'lot-vertices-circles';
+const MIDPOINTS_LAYER = 'lot-midpoints-circles';
+const DRAWING_SOURCE = 'lot-drawing';
+const DRAWING_LINE_LAYER = 'lot-drawing-line';
+const DRAWING_FILL_LAYER = 'lot-drawing-fill';
+const DRAWING_POINTS_LAYER = 'lot-drawing-points';
+const IMAGE_OVERLAY_PREFIX = 'lot-image';
+
+// ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
 
 interface LotConfigMapProps {
   config: LotGridConfig;
-  onCellClick?: (gridId: string, row: number, col: number, dealerName: string) => void;
-  onMapClick?: (lngLat: { lng: number; lat: number }) => void;
+  editorMode: EditorMode;
+  selectedSpaceIds: Set<string>;
+  hoveredSpaceId: string | null;
+  drawingVertices: [number, number][];
+  showLabels: boolean;
+  onSpaceClick?: (spaceId: string, additive: boolean) => void;
+  onEmptyClick?: (lngLat: [number, number]) => void;
+  onDrawVertex?: (lngLat: [number, number]) => void;
+  onDrawFinish?: () => void;
+  onVertexDrag?: (spaceId: string, vertexIndex: number, lngLat: [number, number]) => void;
+  onMidpointClick?: (spaceId: string, vertexIndex: number, lngLat: [number, number]) => void;
+  onSpaceHover?: (spaceId: string | null) => void;
   className?: string;
 }
-
-// ---------------------------------------------------------------------------
-// Source/Layer IDs
-// ---------------------------------------------------------------------------
-
-const GRID_LINES_SOURCE = 'grid-lines';
-const GRID_LINES_LAYER = 'grid-lines-layer';
-const GRID_CELLS_SOURCE = 'grid-cells';
-const GRID_CELLS_FILL_LAYER = 'grid-cells-fill';
-const GRID_CELLS_HOVER_LAYER = 'grid-cells-hover';
-const IMAGE_OVERLAY_SOURCE = 'lot-image';
-const IMAGE_OVERLAY_LAYER = 'lot-image-layer';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Compute 4 corner coordinates for a Mapbox image source from an overlay config. */
 function computeImageCorners(
   overlay: LotImageOverlay,
 ): [[number, number], [number, number], [number, number], [number, number]] {
   const [sw, ne] = overlay.bounds;
-
-  // Center of bounds
   const centerLat = (sw.latitude + ne.latitude) / 2;
   const centerLng = (sw.longitude + ne.longitude) / 2;
   const center: GeoPoint = { latitude: centerLat, longitude: centerLng };
-
-  // Half-dimensions in meters
   const delta = getDeltaMeters(sw, ne);
   const halfW = (Math.abs(delta.x) * overlay.scale) / 2;
   const halfH = (Math.abs(delta.y) * overlay.scale) / 2;
-
-  // Apply flip
   const fx = overlay.flipHorizontal ? -1 : 1;
   const fy = overlay.flipVertical ? -1 : 1;
-
-  // Local corners (relative to center, before rotation)
   const localCorners: [number, number][] = [
-    [-halfW * fx + overlay.offsetX, halfH * fy + overlay.offsetY],   // top-left
-    [halfW * fx + overlay.offsetX, halfH * fy + overlay.offsetY],    // top-right
-    [halfW * fx + overlay.offsetX, -halfH * fy + overlay.offsetY],   // bottom-right
-    [-halfW * fx + overlay.offsetX, -halfH * fy + overlay.offsetY],  // bottom-left
+    [-halfW * fx + overlay.offsetX, halfH * fy + overlay.offsetY],
+    [halfW * fx + overlay.offsetX, halfH * fy + overlay.offsetY],
+    [halfW * fx + overlay.offsetX, -halfH * fy + overlay.offsetY],
+    [-halfW * fx + overlay.offsetX, -halfH * fy + overlay.offsetY],
   ];
-
-  // Rotate and project each corner
   return localCorners.map(([dx, dy]) => {
     const rotated = rotatePoint(dx, dy, overlay.rotationDeg);
     const point = offsetLatLng(center, rotated.x, rotated.y);
@@ -82,20 +87,51 @@ function computeImageCorners(
   }) as [[number, number], [number, number], [number, number], [number, number]];
 }
 
+const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
 export default function LotConfigMap({
   config,
-  onCellClick,
-  onMapClick,
+  editorMode,
+  selectedSpaceIds,
+  hoveredSpaceId,
+  drawingVertices,
+  showLabels,
+  onSpaceClick,
+  onEmptyClick,
+  onDrawVertex,
+  onDrawFinish,
+  onVertexDrag,
+  onMidpointClick,
+  onSpaceHover,
   className,
 }: LotConfigMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const popupRef = useRef<mapboxgl.Popup | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const dragStateRef = useRef<{ spaceId: string; vertexIndex: number } | null>(null);
+
+  // Stable callback refs
+  const onSpaceClickRef = useRef(onSpaceClick);
+  onSpaceClickRef.current = onSpaceClick;
+  const onEmptyClickRef = useRef(onEmptyClick);
+  onEmptyClickRef.current = onEmptyClick;
+  const onDrawVertexRef = useRef(onDrawVertex);
+  onDrawVertexRef.current = onDrawVertex;
+  const onDrawFinishRef = useRef(onDrawFinish);
+  onDrawFinishRef.current = onDrawFinish;
+  const onVertexDragRef = useRef(onVertexDrag);
+  onVertexDragRef.current = onVertexDrag;
+  const onMidpointClickRef = useRef(onMidpointClick);
+  onMidpointClickRef.current = onMidpointClick;
+  const onSpaceHoverRef = useRef(onSpaceHover);
+  onSpaceHoverRef.current = onSpaceHover;
+  const editorModeRef = useRef(editorMode);
+  editorModeRef.current = editorMode;
 
   // Initialize map
   useEffect(() => {
@@ -115,12 +151,279 @@ export default function LotConfigMap({
     map.addControl(new mapboxgl.NavigationControl(), 'top-right');
 
     map.on('load', () => {
+      // Add empty sources so layers can reference them immediately
+      map.addSource(SPACES_SOURCE, { type: 'geojson', data: EMPTY_FC });
+      map.addSource(VERTICES_SOURCE, { type: 'geojson', data: EMPTY_FC });
+      map.addSource(DRAWING_SOURCE, { type: 'geojson', data: EMPTY_FC });
+
+      // Space fill layer — data-driven color by type
+      map.addLayer({
+        id: SPACES_FILL_LAYER,
+        type: 'fill',
+        source: SPACES_SOURCE,
+        paint: {
+          'fill-color': ['get', 'color'],
+          'fill-opacity': [
+            'case',
+            ['get', 'isSelected'], 0.5,
+            ['get', 'isHovered'], 0.35,
+            0.2,
+          ],
+        },
+      });
+
+      // Space outline layer — gold for selected, white for normal
+      map.addLayer({
+        id: SPACES_OUTLINE_LAYER,
+        type: 'line',
+        source: SPACES_SOURCE,
+        paint: {
+          'line-color': [
+            'case',
+            ['get', 'isSelected'], '#D4A017',
+            ['get', 'isHovered'], '#D4A017',
+            '#ffffff',
+          ],
+          'line-width': [
+            'case',
+            ['get', 'isSelected'], 2.5,
+            1,
+          ],
+          'line-opacity': [
+            'case',
+            ['get', 'isSelected'], 1,
+            ['get', 'isHovered'], 0.8,
+            0.4,
+          ],
+        },
+      });
+
+      // Space labels
+      map.addLayer({
+        id: SPACES_LABELS_LAYER,
+        type: 'symbol',
+        source: SPACES_SOURCE,
+        layout: {
+          'text-field': ['get', 'label'],
+          'text-size': 10,
+          'text-font': ['DIN Pro Medium', 'Arial Unicode MS Regular'],
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+        },
+        paint: {
+          'text-color': '#ffffff',
+          'text-halo-color': '#000000',
+          'text-halo-width': 1,
+        },
+      });
+
+      // Vertex circles (edit mode)
+      map.addLayer({
+        id: VERTICES_LAYER,
+        type: 'circle',
+        source: VERTICES_SOURCE,
+        filter: ['==', ['get', 'isVertex'], true],
+        paint: {
+          'circle-radius': 6,
+          'circle-color': '#D4A017',
+          'circle-stroke-color': '#000000',
+          'circle-stroke-width': 2,
+        },
+      });
+
+      // Midpoint circles (edit mode)
+      map.addLayer({
+        id: MIDPOINTS_LAYER,
+        type: 'circle',
+        source: VERTICES_SOURCE,
+        filter: ['==', ['get', 'isMidpoint'], true],
+        paint: {
+          'circle-radius': 4,
+          'circle-color': '#D4A017',
+          'circle-opacity': 0.5,
+          'circle-stroke-color': '#000000',
+          'circle-stroke-width': 1,
+        },
+      });
+
+      // Drawing preview layers
+      map.addLayer({
+        id: DRAWING_FILL_LAYER,
+        type: 'fill',
+        source: DRAWING_SOURCE,
+        filter: ['==', ['geometry-type'], 'Polygon'],
+        paint: {
+          'fill-color': '#D4A017',
+          'fill-opacity': 0.15,
+        },
+      });
+
+      map.addLayer({
+        id: DRAWING_LINE_LAYER,
+        type: 'line',
+        source: DRAWING_SOURCE,
+        filter: ['==', ['geometry-type'], 'LineString'],
+        paint: {
+          'line-color': '#D4A017',
+          'line-width': 2,
+          'line-dasharray': [4, 4],
+        },
+      });
+
+      map.addLayer({
+        id: DRAWING_POINTS_LAYER,
+        type: 'circle',
+        source: DRAWING_SOURCE,
+        filter: ['==', ['geometry-type'], 'Point'],
+        paint: {
+          'circle-radius': 5,
+          'circle-color': '#D4A017',
+          'circle-stroke-color': '#000000',
+          'circle-stroke-width': 2,
+        },
+      });
+
       setMapLoaded(true);
     });
 
-    // Click handler for coordinate capture
+    // Click handler — mode-dependent
     map.on('click', (e) => {
-      onMapClick?.({ lng: e.lngLat.lng, lat: e.lngLat.lat });
+      const mode = editorModeRef.current;
+      const lngLat: [number, number] = [e.lngLat.lng, e.lngLat.lat];
+
+      if (mode === 'draw') {
+        onDrawVertexRef.current?.(lngLat);
+        return;
+      }
+
+      if (mode === 'select') {
+        // Check if clicked on a space
+        const features = map.queryRenderedFeatures(e.point, { layers: [SPACES_FILL_LAYER] });
+        if (features.length > 0) {
+          const spaceId = features[0]?.properties?.id;
+          if (spaceId) {
+            onSpaceClickRef.current?.(spaceId, e.originalEvent.shiftKey);
+          }
+        } else {
+          onEmptyClickRef.current?.(lngLat);
+        }
+        return;
+      }
+
+      if (mode === 'edit') {
+        // Check midpoint click
+        const midFeats = map.queryRenderedFeatures(e.point, { layers: [MIDPOINTS_LAYER] });
+        if (midFeats.length > 0) {
+          const props = midFeats[0]?.properties;
+          if (props?.spaceId && props?.vertexIndex !== undefined) {
+            onMidpointClickRef.current?.(props.spaceId, props.vertexIndex, lngLat);
+          }
+          return;
+        }
+        // Fallback: click space to select in edit mode
+        const features = map.queryRenderedFeatures(e.point, { layers: [SPACES_FILL_LAYER] });
+        if (features.length > 0) {
+          const spaceId = features[0]?.properties?.id;
+          if (spaceId) {
+            onSpaceClickRef.current?.(spaceId, e.originalEvent.shiftKey);
+          }
+        }
+      }
+    });
+
+    // Double-click finishes drawing
+    map.on('dblclick', (e) => {
+      if (editorModeRef.current === 'draw') {
+        e.preventDefault();
+        onDrawFinishRef.current?.();
+      }
+    });
+
+    // Hover effect
+    map.on('mousemove', (e) => {
+      const mode = editorModeRef.current;
+
+      if (mode === 'draw') {
+        map.getCanvas().style.cursor = 'crosshair';
+        return;
+      }
+
+      if (mode === 'edit') {
+        const vertexFeats = map.queryRenderedFeatures(e.point, { layers: [VERTICES_LAYER, MIDPOINTS_LAYER] });
+        if (vertexFeats.length > 0) {
+          map.getCanvas().style.cursor = 'grab';
+          return;
+        }
+      }
+
+      if (mode === 'select' || mode === 'edit') {
+        const features = map.queryRenderedFeatures(e.point, { layers: [SPACES_FILL_LAYER] });
+        if (features.length > 0) {
+          map.getCanvas().style.cursor = 'pointer';
+          const spaceId = features[0]?.properties?.id ?? null;
+          onSpaceHoverRef.current?.(spaceId);
+
+          // Show popup
+          if (spaceId && features[0]?.properties) {
+            const props = features[0].properties;
+            if (!popupRef.current) {
+              popupRef.current = new mapboxgl.Popup({
+                closeButton: false,
+                closeOnClick: false,
+                className: 'lot-space-popup',
+                offset: 10,
+              });
+            }
+            popupRef.current
+              .setLngLat(e.lngLat)
+              .setHTML(
+                `<div style="font-family:monospace;font-size:12px;color:#D4A017;font-weight:bold">${props.name}</div>` +
+                `<div style="font-family:monospace;font-size:10px;color:#999">${props.type}${props.vin ? ` · ${props.stockNumber ?? props.vin}` : ''}</div>`,
+              )
+              .addTo(map);
+          }
+        } else {
+          map.getCanvas().style.cursor = mode === 'edit' ? 'crosshair' : '';
+          onSpaceHoverRef.current?.(null);
+          popupRef.current?.remove();
+        }
+        return;
+      }
+
+      map.getCanvas().style.cursor = '';
+    });
+
+    // Vertex dragging (edit mode)
+    map.on('mousedown', VERTICES_LAYER, (e) => {
+      if (editorModeRef.current !== 'edit') return;
+      if (!e.features?.[0]?.properties) return;
+
+      const props = e.features[0].properties;
+      dragStateRef.current = { spaceId: props.spaceId, vertexIndex: props.vertexIndex };
+      map.getCanvas().style.cursor = 'grabbing';
+
+      // Disable map panning during drag
+      map.dragPan.disable();
+
+      const onMove = (moveE: mapboxgl.MapMouseEvent) => {
+        if (!dragStateRef.current) return;
+        onVertexDragRef.current?.(
+          dragStateRef.current.spaceId,
+          dragStateRef.current.vertexIndex,
+          [moveE.lngLat.lng, moveE.lngLat.lat],
+        );
+      };
+
+      const onUp = () => {
+        dragStateRef.current = null;
+        map.getCanvas().style.cursor = 'grab';
+        map.dragPan.enable();
+        map.off('mousemove', onMove);
+        map.off('mouseup', onUp);
+      };
+
+      map.on('mousemove', onMove);
+      map.on('mouseup', onUp);
     });
 
     mapRef.current = map;
@@ -130,7 +433,6 @@ export default function LotConfigMap({
       mapRef.current = null;
       setMapLoaded(false);
     };
-    // Only init once
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -143,179 +445,156 @@ export default function LotConfigMap({
       bearing: config.bearing,
       duration: 1000,
     });
-  }, [config.center, config.zoom, config.bearing, mapLoaded]);
+  }, [config.center.latitude, config.center.longitude, config.zoom, config.bearing, mapLoaded]);
 
-  // Render grid lines and cells
-  const renderGrids = useCallback(() => {
+  // Update spaces GeoJSON
+  useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapLoaded) return;
 
-    // Remove existing grid layers/sources
-    [GRID_LINES_LAYER, GRID_CELLS_FILL_LAYER, GRID_CELLS_HOVER_LAYER].forEach((layerId) => {
-      if (map.getLayer(layerId)) map.removeLayer(layerId);
-    });
-    [GRID_LINES_SOURCE, GRID_CELLS_SOURCE].forEach((sourceId) => {
-      if (map.getSource(sourceId)) map.removeSource(sourceId);
-    });
+    const source = map.getSource(SPACES_SOURCE) as mapboxgl.GeoJSONSource | undefined;
+    if (!source) return;
 
-    const visibleGrids = config.grids.filter((g) => g.visible);
-    if (visibleGrids.length === 0) return;
+    const geoJSON = generateSpacesGeoJSON(config.spaces, selectedSpaceIds, hoveredSpaceId);
+    source.setData(geoJSON);
+  }, [config.spaces, selectedSpaceIds, hoveredSpaceId, mapLoaded]);
 
-    // Merge all grid lines into one FeatureCollection
-    const allLines: GeoJSON.Feature[] = [];
-    const allCells: GeoJSON.Feature[] = [];
+  // Update vertex handles (edit mode)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded) return;
 
-    for (const grid of visibleGrids) {
-      const linesGeoJSON = generateGridLinesGeoJSON(grid);
-      allLines.push(...linesGeoJSON.features);
+    const source = map.getSource(VERTICES_SOURCE) as mapboxgl.GeoJSONSource | undefined;
+    if (!source) return;
 
-      const cellsGeoJSON = generateCellsGeoJSON(grid);
-      allCells.push(...cellsGeoJSON.features);
+    if (editorMode === 'edit' && selectedSpaceIds.size > 0) {
+      source.setData(generateVertexGeoJSON(config.spaces, selectedSpaceIds));
+    } else {
+      source.setData(EMPTY_FC);
+    }
+  }, [config.spaces, selectedSpaceIds, editorMode, mapLoaded]);
+
+  // Update drawing preview
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded) return;
+
+    const source = map.getSource(DRAWING_SOURCE) as mapboxgl.GeoJSONSource | undefined;
+    if (!source) return;
+
+    if (drawingVertices.length === 0) {
+      source.setData(EMPTY_FC);
+      return;
     }
 
-    // Add grid lines
-    map.addSource(GRID_LINES_SOURCE, {
-      type: 'geojson',
-      data: { type: 'FeatureCollection', features: allLines },
-    });
-    map.addLayer({
-      id: GRID_LINES_LAYER,
-      type: 'line',
-      source: GRID_LINES_SOURCE,
-      paint: {
-        'line-color': ['get', 'color'],
-        'line-width': 1,
-        'line-opacity': 0.6,
-      },
-    });
+    const features: GeoJSON.Feature[] = [];
 
-    // Add cell fills (transparent, for hover/click)
-    map.addSource(GRID_CELLS_SOURCE, {
-      type: 'geojson',
-      data: { type: 'FeatureCollection', features: allCells },
-    });
-    map.addLayer({
-      id: GRID_CELLS_FILL_LAYER,
-      type: 'fill',
-      source: GRID_CELLS_SOURCE,
-      paint: {
-        'fill-color': ['get', 'color'],
-        'fill-opacity': 0.05,
-      },
-    });
-    map.addLayer({
-      id: GRID_CELLS_HOVER_LAYER,
-      type: 'fill',
-      source: GRID_CELLS_SOURCE,
-      paint: {
-        'fill-color': ['get', 'color'],
-        'fill-opacity': 0.3,
-      },
-      filter: ['==', 'cellId', ''],
-    });
+    // Point markers at each vertex
+    for (const v of drawingVertices) {
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: v },
+        properties: {},
+      });
+    }
 
-    // Hover effect
-    map.on('mousemove', GRID_CELLS_FILL_LAYER, (e) => {
-      if (!e.features?.[0]) return;
-      map.getCanvas().style.cursor = 'pointer';
-      const cellId = e.features[0].properties?.cellId ?? '';
-      map.setFilter(GRID_CELLS_HOVER_LAYER, ['==', 'cellId', cellId]);
+    // Line connecting vertices
+    if (drawingVertices.length >= 2) {
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates: drawingVertices },
+        properties: {},
+      });
+    }
 
-      // Show popup with dealer name
-      const dealerName = e.features[0].properties?.dealerName ?? '';
-      const row = e.features[0].properties?.row ?? 0;
-      const col = e.features[0].properties?.col ?? 0;
-      const centerLng = e.features[0].properties?.centerLng ?? e.lngLat.lng;
-      const centerLat = e.features[0].properties?.centerLat ?? e.lngLat.lat;
+    // Polygon preview when 3+ vertices
+    if (drawingVertices.length >= 3) {
+      features.push({
+        type: 'Feature',
+        geometry: {
+          type: 'Polygon',
+          coordinates: [[...drawingVertices, drawingVertices[0]!]],
+        },
+        properties: {},
+      });
+    }
 
-      if (!popupRef.current) {
-        popupRef.current = new mapboxgl.Popup({
-          closeButton: false,
-          closeOnClick: false,
-          className: 'lot-cell-popup',
-        });
-      }
+    source.setData({ type: 'FeatureCollection', features });
+  }, [drawingVertices, mapLoaded]);
 
-      popupRef.current
-        .setLngLat([centerLng, centerLat])
-        .setHTML(
-          `<div style="font-family:monospace;font-size:12px;color:#D4A017;font-weight:bold">${dealerName}</div>` +
-          `<div style="font-family:monospace;font-size:10px;color:#999">Row ${row} · Col ${col}</div>`,
-        )
-        .addTo(map);
-    });
-
-    map.on('mouseleave', GRID_CELLS_FILL_LAYER, () => {
-      map.getCanvas().style.cursor = '';
-      map.setFilter(GRID_CELLS_HOVER_LAYER, ['==', 'cellId', '']);
-      popupRef.current?.remove();
-    });
-
-    // Click handler for cells
-    map.on('click', GRID_CELLS_FILL_LAYER, (e) => {
-      if (!e.features?.[0]) return;
-      const props = e.features[0].properties;
-      if (props) {
-        onCellClick?.(
-          props.gridId,
-          props.row,
-          props.col,
-          props.dealerName,
-        );
-      }
-      e.originalEvent.stopPropagation();
-    });
-  }, [config.grids, mapLoaded, onCellClick]);
+  // Toggle label visibility
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded) return;
+    if (map.getLayer(SPACES_LABELS_LAYER)) {
+      map.setLayoutProperty(SPACES_LABELS_LAYER, 'visibility', showLabels ? 'visible' : 'none');
+    }
+  }, [showLabels, mapLoaded]);
 
   // Render image overlays
-  const renderImageOverlays = useCallback(() => {
+  useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapLoaded) return;
 
-    // Remove existing image overlay
-    if (map.getLayer(IMAGE_OVERLAY_LAYER)) map.removeLayer(IMAGE_OVERLAY_LAYER);
-    if (map.getSource(IMAGE_OVERLAY_SOURCE)) map.removeSource(IMAGE_OVERLAY_SOURCE);
+    // Remove existing image overlays
+    for (let i = 0; i < 10; i++) {
+      const layerId = `${IMAGE_OVERLAY_PREFIX}-layer-${i}`;
+      const sourceId = `${IMAGE_OVERLAY_PREFIX}-source-${i}`;
+      if (map.getLayer(layerId)) map.removeLayer(layerId);
+      if (map.getSource(sourceId)) map.removeSource(sourceId);
+    }
 
-    if (config.imageOverlays.length === 0) return;
+    // Add each overlay
+    config.imageOverlays.forEach((overlay, i) => {
+      if (!overlay.imageUrl) return;
 
-    // Render the first overlay (primary lot image)
-    const overlay = config.imageOverlays[0];
-    if (!overlay) return;
+      const sourceId = `${IMAGE_OVERLAY_PREFIX}-source-${i}`;
+      const layerId = `${IMAGE_OVERLAY_PREFIX}-layer-${i}`;
 
-    // Use pre-computed corners if available (from iOS config), otherwise compute
-    const corners = overlay.corners
-      ? overlay.corners.map((p) => [p.longitude, p.latitude] as [number, number]) as [[number, number], [number, number], [number, number], [number, number]]
-      : computeImageCorners(overlay);
+      const corners = overlay.corners
+        ? overlay.corners.map((p) => [p.longitude, p.latitude] as [number, number]) as [[number, number], [number, number], [number, number], [number, number]]
+        : computeImageCorners(overlay);
 
-    map.addSource(IMAGE_OVERLAY_SOURCE, {
-      type: 'image',
-      url: overlay.imageUrl,
-      coordinates: corners,
-    });
+      map.addSource(sourceId, {
+        type: 'image',
+        url: overlay.imageUrl,
+        coordinates: corners,
+      });
 
-    // Insert below grid lines
-    const beforeLayer = map.getLayer(GRID_LINES_LAYER) ? GRID_LINES_LAYER : undefined;
-    map.addLayer(
-      {
-        id: IMAGE_OVERLAY_LAYER,
+      // Insert below space fill layer
+      const beforeLayer = map.getLayer(SPACES_FILL_LAYER) ? SPACES_FILL_LAYER : undefined;
+      map.addLayer({
+        id: layerId,
         type: 'raster',
-        source: IMAGE_OVERLAY_SOURCE,
-        paint: {
-          'raster-opacity': overlay.opacity,
-        },
-      },
-      beforeLayer,
-    );
+        source: sourceId,
+        paint: { 'raster-opacity': overlay.opacity },
+      }, beforeLayer);
+    });
   }, [config.imageOverlays, mapLoaded]);
 
-  // Re-render when config changes
+  // Cursor based on editor mode
   useEffect(() => {
-    renderImageOverlays();
-  }, [renderImageOverlays]);
+    const map = mapRef.current;
+    if (!map || !mapLoaded) return;
 
+    if (editorMode === 'draw') {
+      map.getCanvas().style.cursor = 'crosshair';
+    } else if (editorMode === 'pan') {
+      map.getCanvas().style.cursor = '';
+    }
+  }, [editorMode, mapLoaded]);
+
+  // Disable double-click zoom in draw mode
   useEffect(() => {
-    renderGrids();
-  }, [renderGrids]);
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (editorMode === 'draw') {
+      map.doubleClickZoom.disable();
+    } else {
+      map.doubleClickZoom.enable();
+    }
+  }, [editorMode]);
 
   return (
     <div

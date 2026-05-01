@@ -65,7 +65,13 @@ interface CpuMetric {
 
 function readCpu(): CpuMetric {
   const cores = os.cpus().length;
-  const [load1, load5, load15] = os.loadavg();
+  // os.loadavg() always returns a 3-tuple at runtime, but with
+  // noUncheckedIndexedAccess each element is typed `number | undefined`.
+  // Default to 0 if any value is missing (shouldn't happen in practice).
+  const loadavg = os.loadavg();
+  const load1 = loadavg[0] ?? 0;
+  const load5 = loadavg[1] ?? 0;
+  const load15 = loadavg[2] ?? 0;
   // Convert load average → approximate utilization percent.
   // load1 == cores  → ~100% utilization.
   const used = Math.min(100, Math.round((load1 / Math.max(cores, 1)) * 100));

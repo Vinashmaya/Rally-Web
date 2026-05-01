@@ -341,10 +341,12 @@ export async function POST(request: NextRequest) {
     });
 
     const buffer = pass.getAsBuffer();
-    // NextResponse expects BodyInit (Web Fetch types). Node Buffer extends
-    // Uint8Array but TS strict mode doesn't narrow that — wrap in a
-    // Uint8Array view (zero-copy) to satisfy BodyInit.
-    const passBody = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+    // NextResponse expects BodyInit (Web Fetch types). Node Buffer is a
+    // Uint8Array<ArrayBufferLike>, which TS strict mode in Next 15 / TS 5.7
+    // does not narrow to BodyInit. Copy into a fresh ArrayBuffer (which IS
+    // in BodyInit's BufferSource union) to satisfy the typechecker.
+    const passBody = new ArrayBuffer(buffer.byteLength);
+    new Uint8Array(passBody).set(buffer);
 
     return new NextResponse(passBody, {
       status: 200,

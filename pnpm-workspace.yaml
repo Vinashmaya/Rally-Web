@@ -6,5 +6,3 @@ onlyBuiltDependencies:
   - '@firebase/util'
   - protobufjs
   - sharp
-
-storeDir: /sessions/exciting-lucid-bell/.pnpm-store

@@ -344,9 +344,9 @@ export async function POST(request: NextRequest) {
     // NextResponse expects BodyInit (Web Fetch types). Node Buffer extends
     // Uint8Array but TS strict mode doesn't narrow that — wrap in a
     // Uint8Array view (zero-copy) to satisfy BodyInit.
-    const body = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+    const passBody = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
 
-    return new NextResponse(body, {
+    return new NextResponse(passBody, {
       status: 200,
       headers: {
         'Content-Type': 'application/vnd.apple.pkpass',

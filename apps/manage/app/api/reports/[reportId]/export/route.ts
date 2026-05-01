@@ -538,7 +538,11 @@ export async function GET(
       dealershipId: ctx.dealershipId,
       generatedAt: new Date(),
     });
-    return new NextResponse(pdfBuffer, {
+    // Copy into a fresh ArrayBuffer to satisfy NextResponse BodyInit typing
+    // under TS 5.7 (Buffer<ArrayBufferLike> is not narrowed to BodyInit).
+    const pdfBody = new ArrayBuffer(pdfBuffer.byteLength);
+    new Uint8Array(pdfBody).set(pdfBuffer);
+    return new NextResponse(pdfBody, {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',

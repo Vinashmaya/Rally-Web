@@ -37,7 +37,8 @@ export function getStripe(): Stripe {
 
   _client = new Stripe(secretKey, {
     // Pin the API version Rally is built against. Bump deliberately.
-    apiVersion: '2024-12-18.acacia',
+    // Tracks the version expected by the installed Stripe Node SDK types.
+    apiVersion: '2025-02-24.acacia',
     typescript: true,
     appInfo: {
       name: 'Rally Web',

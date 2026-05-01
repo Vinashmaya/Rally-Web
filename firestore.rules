@@ -1,42 +1,61 @@
 rules_version = '2';
 
 // ============================================================================
-// Rally Firestore Security Rules
+// Firestore Security Rules — guess-63e3d
 // ============================================================================
 //
-// MODEL
-// -----
-// Multi-tenant via custom claims set on the Firebase Auth token. The Web app
-// (`apps/manage/.../users/invite`, `apps/manage/.../users/[uid]/role`,
-// `packages/infra/.../provisionTenant`) writes these claims at user create /
-// role change time:
+// This file covers TWO products that share this Firebase project:
+//   1. Rally (rally.vin) — automotive dealership operating system
+//      Rally roles: owner, general_manager, sales_manager, service_manager,
+//        finance_manager, desk_manager, salesperson, bdc_agent,
+//        service_advisor, technician, porter, detailer, parts
+//      Rally collections: dealerships/, vehicleLists/, vehicleActivities/,
+//        nfcTags/, interactions/, testDrives/, parkingSpaces/, alerts/,
+//        crmCustomers/, fleetVehicles/, batteryReports/, recentCrmViews/,
+//        auditLogs/, aiUsage/, featureFlags/, system/, employees/,
+//        groups/{id}/stores/, groups/{id}/config, groups/{id}/roles
 //
-//   {
-//     groupId:       string  // tenant boundary (DealerGroup id)
-//     dealershipId:  string  // active store (Store id == legacy dealershipId)
-//     role:          UserRole // see roles below
-//   }
+//   2. Guess / WalletCard (legacy) — multi-tenant SaaS over the same project
+//      Guess roles: platform_admin, group_admin, dealer_admin, ai_specialist,
+//        sales_agent
+//      Guess collections: grandfather_protocol/, stores/, system_config/,
+//        ai_config/, chat_logs/, reflective_memory/, playground_sessions/,
+//        media/, plus subcollections under users/{uid}/ for memory, settings,
+//        personas, gallery, chat_sessions
 //
-// In legacy single-store mode, `groupId == dealershipId == storeId`. The iOS
-// app's multi-tenant doc (Rally/docs/multi-tenant/security.md) proposes a
-// richer per-store memberships map in the token; that has not shipped yet, so
-// these rules use the flat shape that Web actually issues today, with a
-// fallback to a `users/{uid}` document lookup for tokens that pre-date the
-// claim rollout. When the per-store memberships claim ships, helper functions
-// below should be extended (not rewritten).
+// SHARED COLLECTIONS (both products write to these — rules combine):
+//   * users/{uid}      — same documents, different role values
+//   * groups/{id}      — Rally tenant root; Guess group_admin lookups
+//   * vehicles/{id}    — Rally vehicles (dealershipId) + Guess vehicles (storeId)
 //
-// SUPER ADMINS
-// ------------
-// Super admin status is UID-based, mirroring auth-guard.ts. Two equivalent
-// signals are honored so that either iOS or Web can mark a user as super
-// admin without coupling to the other:
-//   1. `request.auth.token.superAdmin == true` (preferred, future-proof)
-//   2. A document at `system/superAdmins` with `uids: [<uid>, ...]`
-//      (operator-managed list — same shape as SUPER_ADMIN_UIDS env var)
-// Add a uid to either to grant access.
+// CONFLICT NOTE — vehicles/
+// Rally vehicles use field `dealershipId`; Guess vehicles use `storeId`. Rules
+// allow reads/writes via either path, scoped to the calling product's role
+// system. There is residual cross-product visibility risk if a single user
+// is provisioned in BOTH products with overlapping tenant ids — track this
+// for future separation into distinct collections (e.g. rally_vehicles/).
 //
-// ROLE HIERARCHY (matches packages/firebase/src/types/user.ts ROLE_HIERARCHY,
-// lower number == more authority):
+// RALLY MODEL
+// -----------
+// Multi-tenant via custom claims set on the Firebase Auth token at user
+// invite, role change, and tenant provisioning:
+//   { groupId, dealershipId, role: <Rally role> }
+// In legacy single-store mode, groupId == dealershipId == storeId. Rules
+// fall back to a users/{uid} document lookup for tokens that pre-date the
+// claim rollout.
+//
+// SUPER ADMINS (Rally)
+// --------------------
+// Two equivalent signals:
+//   1. request.auth.token.superAdmin == true
+//   2. uid in system/superAdmins.uids
+//
+// Run scripts/setup-super-admin.js <uid> to backfill the claim for an
+// existing UID listed in SUPER_ADMIN_UIDS env var. Without backfilling,
+// admin client-SDK reads will fail (admin route handlers bypass via
+// firebase-admin so server paths still work).
+//
+// RALLY ROLE HIERARCHY (lower number == more authority):
 //   0  owner
 //   1  general_manager
 //   2  sales_manager, service_manager, finance_manager
@@ -46,15 +65,6 @@ rules_version = '2';
 //
 // hasMinRole(level) returns true when the user's role hierarchy number is
 // <= level. e.g. hasMinRole(3) == "desk_manager or higher".
-//
-// IOS COMPAT
-// ----------
-// iOS reads the same paths Web does (users/{uid}, vehicles/, interactions/,
-// vehicleLists/, vehicleActivities/, nfcTags/, testDrives/, parkingSpaces/,
-// alerts/, recentCrmViews/{uid}/customers/, employees/{uid}/memberships/,
-// groups/{groupId}, groups/{groupId}/stores/{storeId}, dealerships/{id}).
-// All those reads remain allowed for any signed-in member of the same
-// dealership/group, and writes follow the role hierarchy above.
 //
 // DENY BY DEFAULT
 // ---------------
@@ -67,16 +77,24 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ------------------------------------------------------------------------
-    // Helper functions
-    // ------------------------------------------------------------------------
+    // ========================================================================
+    // SHARED HELPERS
+    // ========================================================================
 
     function isSignedIn() {
       return request.auth != null;
     }
 
-    // True when the auth token carries a superAdmin claim, OR when the uid
-    // is listed in system/superAdmins.uids.
+    // Alias used by the legacy Guess/WalletCard rules — kept verbatim so
+    // those rule blocks don't need to be rewritten.
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // ========================================================================
+    // RALLY HELPERS
+    // ========================================================================
+
     function isSuperAdmin() {
       return isSignedIn() && (
         (request.auth.token.superAdmin == true) ||
@@ -87,9 +105,6 @@ service cloud.firestore {
       );
     }
 
-    // The caller's user document, used as the fallback tenant lookup when
-    // custom claims aren't present yet. Wrap every call site in
-    // `userDocExists()` first to avoid rule-evaluation failures.
     function userDocExists() {
       return exists(/databases/$(database)/documents/users/$(request.auth.uid));
     }
@@ -97,9 +112,6 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    // Tenant id from claims, falling back to users/{uid}.dealershipId or
-    // users/{uid}.groupId. This is the value compared against
-    // resource.data.dealershipId on tenant-scoped collections.
     function userTenantId() {
       return isSignedIn() ? (
         request.auth.token.dealershipId != null ? request.auth.token.dealershipId :
@@ -118,7 +130,6 @@ service cloud.firestore {
     }
 
     function userStoreId() {
-      // Today storeId == dealershipId for single-store tenants.
       return userTenantId();
     }
 
@@ -133,7 +144,6 @@ service cloud.firestore {
       return userRole() == role;
     }
 
-    // Map role -> hierarchy level (mirror of ROLE_HIERARCHY in user.ts).
     function roleLevel(role) {
       return role == 'owner' ? 0
         : role == 'general_manager' ? 1
@@ -155,15 +165,15 @@ service cloud.firestore {
       return isSignedIn() && roleLevel(userRole()) <= level;
     }
 
-    // Convenience aliases used heavily below.
-    function isManager()   { return hasMinRole(3); }  // desk_manager+
-    function isSm()        { return hasMinRole(2); }  // sales/service/finance manager+
-    function isGm()        { return hasMinRole(1); }  // general_manager+
-    function isOwner()     { return hasMinRole(0); }  // owner only
-    function isLineStaff() { return hasMinRole(5); }  // any role at or above porter
+    function isManager()   { return hasMinRole(3); }
+    function isSm()        { return hasMinRole(2); }
+    function isGm()        { return hasMinRole(1); }
+    function isOwner()     { return hasMinRole(0); }
+    function isLineStaff() { return hasMinRole(5); }
 
-    // Tenant scope check against a doc that carries dealershipId (legacy) or
-    // storeId / groupId. Accepts either name.
+    // Tenant scope check against a doc that carries dealershipId, storeId,
+    // or groupId. Accepts any of the three names so Rally docs (dealershipId)
+    // and per-group docs (groupId) both match the same caller.
     function inTenant(data) {
       return isSignedIn() && (
         (data.dealershipId != null && data.dealershipId == userTenantId()) ||
@@ -172,53 +182,231 @@ service cloud.firestore {
       );
     }
 
-    function inGroup(data) {
-      return isSignedIn() && data.groupId != null && data.groupId == userGroupId();
+    // ========================================================================
+    // GUESS / WALLETCARD HELPERS  (verbatim from prior production rules)
+    // ========================================================================
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    // For incoming writes, both the existing doc (resource) and the new doc
-    // (request.resource) must belong to the caller's tenant — prevents moving
-    // a doc to another tenant via update.
-    function writeStaysInTenant() {
-      return inTenant(request.resource.data) && (
-        // create: no resource yet
-        !('data' in resource) || inTenant(resource.data)
+    function isPlatformAdmin() {
+      return isAuthenticated() && getUserData().role == 'platform_admin';
+    }
+
+    function isGroupAdmin(groupId) {
+      let user = getUserData();
+      return isAuthenticated() &&
+             user.role == 'group_admin' &&
+             user.groupId == groupId;
+    }
+
+    function isDealerAdmin(storeId) {
+      let user = getUserData();
+      return isAuthenticated() && (
+        (user.role == 'dealer_admin' && user.storeId == storeId) ||
+        (user.role == 'group_admin' && storeInGroup(storeId, user.groupId))
       );
     }
 
+    function isAISpecialist(storeId) {
+      let user = getUserData();
+      return isAuthenticated() && (
+        user.role == 'ai_specialist' && user.storeId == storeId
+      );
+    }
+
+    function isSalesAgent(storeId) {
+      let user = getUserData();
+      return isAuthenticated() &&
+             user.role == 'sales_agent' &&
+             user.storeId == storeId;
+    }
+
+    function storeInGroup(storeId, groupId) {
+      return get(/databases/$(database)/documents/stores/$(storeId)).data.groupId == groupId;
+    }
+
+    function hasStoreAccess(storeId, requiredLevel) {
+      let user = getUserData();
+      return isAuthenticated() && (
+        isPlatformAdmin() ||
+        (requiredLevel >= 2 && user.role == 'group_admin' && storeInGroup(storeId, user.groupId)) ||
+        (requiredLevel >= 3 && user.role == 'dealer_admin' && user.storeId == storeId) ||
+        (requiredLevel >= 4 && user.role == 'ai_specialist' && user.storeId == storeId) ||
+        (requiredLevel >= 5 && user.role == 'sales_agent' && user.storeId == storeId)
+      );
+    }
+
+    // ========================================================================
+    // GUESS / WALLETCARD COLLECTION RULES (verbatim, except where noted)
+    // ========================================================================
+
+    // Open access for any authenticated user — pre-existing behavior.
+    match /grandfather_protocol/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    match /stores/{storeId} {
+      allow read: if isAuthenticated();
+      allow write: if isPlatformAdmin();
+      allow write: if isGroupAdmin(resource.data.groupId);
+    }
+
+    match /system_config/{configId} {
+      allow read: if isAuthenticated();
+      allow write: if isPlatformAdmin();
+      allow write: if isGroupAdmin(resource.data.groupId);
+    }
+
+    match /system_config/global_prompts {
+      allow read: if isAuthenticated();
+      allow write: if isPlatformAdmin() || isGroupAdmin(resource.data.groupId);
+    }
+
+    match /ai_config/{configId} {
+      allow read: if isAuthenticated();
+      allow write: if isDealerAdmin(resource.data.storeId);
+      allow write: if isAISpecialist(resource.data.storeId);
+      allow create: if isDealerAdmin(request.resource.data.storeId) ||
+                       isAISpecialist(request.resource.data.storeId);
+    }
+
+    match /chat_logs/{chatId} {
+      allow read: if isAuthenticated() && request.auth.uid == resource.data.agentId;
+      allow read: if hasStoreAccess(resource.data.storeId, 3);
+      allow create: if isAuthenticated();
+      allow update: if (isAuthenticated() && request.auth.uid == resource.data.agentId) ||
+                       hasStoreAccess(resource.data.storeId, 3);
+      allow delete: if hasStoreAccess(resource.data.storeId, 3);
+
+      match /sessions/{sessionId} {
+         allow read, write: if isAuthenticated() && request.auth.uid == chatId;
+         allow read: if resource.data.isShared == true;
+      }
+    }
+
+    // User-owned subcollections (Guess-only — Rally does not write here).
+    match /users/{userId}/memory/{memoryId} {
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      allow read: if isPlatformAdmin();
+    }
+    match /users/{userId}/settings/{settingId} {
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+    }
+    match /users/{userId}/personas/{personaId} {
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+    }
+    match /users/{userId}/gallery/{assetId} {
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      allow read: if isPlatformAdmin();
+    }
+    match /users/{userId}/chat_sessions/{sessionId} {
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      match /messages/{messageId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      }
+    }
+
+    match /reflective_memory/{storeId}/embeddings/{embeddingId} {
+      allow read: if hasStoreAccess(storeId, 5);
+      allow write: if hasStoreAccess(storeId, 3);
+    }
+
+    match /playground_sessions/{sessionId} {
+      allow read, write: if isDealerAdmin(resource.data.storeId) ||
+                            isAISpecialist(resource.data.storeId);
+      allow create: if isDealerAdmin(request.resource.data.storeId) ||
+                       isAISpecialist(request.resource.data.storeId);
+    }
+
+    match /media/{userId}/{document=**} {
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      allow read: if isPlatformAdmin();
+    }
+
+    // ========================================================================
+    // SHARED COLLECTIONS — combined Rally + Guess rules
+    // ========================================================================
+
     // ------------------------------------------------------------------------
-    // groups/{groupId} — DealerGroup (tenant root)
+    // users/{uid}
+    //
+    // Combined access model. Multiple `allow` clauses OR together:
+    //   * Self-read/write (both products)
+    //   * Same-tenant read (Rally managers; Guess group_admin / dealer_admin)
+    //   * Privileged write (Rally super_admin / GM; Guess platform_admin)
+    // ------------------------------------------------------------------------
+    match /users/{uid} {
+      // ---- Reads ----
+      // Self
+      allow read: if isAuthenticated() && request.auth.uid == uid;
+      // Rally super admin
+      allow read: if isSuperAdmin();
+      // Rally same-dealership/group reads (managers + line staff for attribution)
+      allow read: if isSignedIn() && (
+        (resource.data.dealershipId != null && resource.data.dealershipId == userTenantId()) ||
+        (resource.data.groupId != null && resource.data.groupId == userGroupId())
+      );
+      // Guess platform_admin / group_admin / dealer_admin
+      allow read: if isPlatformAdmin();
+      allow read: if isGroupAdmin(resource.data.groupId);
+      allow read: if isDealerAdmin(resource.data.storeId);
+
+      // ---- Writes (create/update/delete) ----
+      // Self create + self update (Guess pattern)
+      allow create, update: if isAuthenticated() && request.auth.uid == uid;
+      // Rally super admin can do anything
+      allow create, update, delete: if isSuperAdmin();
+      // Guess platform_admin write
+      allow write: if isPlatformAdmin();
+      // Rally self-update with affected-field allowlist
+      allow update: if isSignedIn() && request.auth.uid == uid &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly([
+            'displayName', 'phone', 'photoURL', 'fcmTokens',
+            'preferences', 'lastActiveAt', 'updatedAt'
+          ]);
+      // Rally GM updates within tenant (cannot move user across tenants)
+      allow update: if isSignedIn() && isGm() &&
+        resource.data.dealershipId == userTenantId() &&
+        request.resource.data.dealershipId == resource.data.dealershipId &&
+        request.resource.data.groupId == resource.data.groupId;
+    }
+
+    // ------------------------------------------------------------------------
+    // groups/{groupId}
+    //
+    // Combined: Rally tenant root rules + Guess platform_admin write.
+    // Tightening note: previously any authenticated user could read all
+    // groups. Trey confirmed WalletCard does not rely on that — restricted
+    // to same-group members (Rally model) and platform_admin (Guess).
     // ------------------------------------------------------------------------
     match /groups/{groupId} {
-      // Read: super admin OR member of this group
-      allow read: if isSuperAdmin() || (isSignedIn() && groupId == userGroupId());
+      // Read: super admin, same-group member (Rally), or platform_admin (Guess)
+      allow read: if isSuperAdmin();
+      allow read: if isSignedIn() && groupId == userGroupId();
+      allow read: if isPlatformAdmin();
 
-      // Write: super admin, or owner of this group
-      allow create, update, delete: if isSuperAdmin() ||
-        (isSignedIn() && groupId == userGroupId() && isOwner());
+      // Write: super admin, owner of group (Rally), or platform_admin (Guess)
+      allow create, update, delete: if isSuperAdmin();
+      allow create, update, delete: if isSignedIn() && groupId == userGroupId() && isOwner();
+      allow write: if isPlatformAdmin();
 
-      // ----- stores subcollection -----
+      // Rally subcollections (do not exist in Guess data model)
       match /stores/{storeId} {
         allow read: if isSuperAdmin() ||
           (isSignedIn() && groupId == userGroupId());
-
-        // Create/update store: GM+ in that group, or super admin
         allow create, update: if isSuperAdmin() ||
           (isSignedIn() && groupId == userGroupId() && isGm());
-
-        // Delete store: owner of group or super admin
         allow delete: if isSuperAdmin() ||
           (isSignedIn() && groupId == userGroupId() && isOwner());
       }
-
-      // ----- config subcollection (provisioning metadata) -----
       match /config/{configId} {
         allow read: if isSuperAdmin() ||
           (isSignedIn() && groupId == userGroupId() && isGm());
         allow write: if isSuperAdmin();
       }
-
-      // ----- roles subcollection (custom roles) -----
       match /roles/{roleId} {
         allow read: if isSignedIn() && groupId == userGroupId();
         allow write: if isSuperAdmin() ||
@@ -227,119 +415,76 @@ service cloud.firestore {
     }
 
     // ------------------------------------------------------------------------
-    // dealerships/{dealershipId} — legacy mirror of groups/stores
+    // vehicles/{vehicleId}
+    //
+    // Combined: Rally same-tenant rules + Guess hasStoreAccess + competitorx
+    // server hydration.
+    //
+    // CHANGES vs prior production rules (per Trey's call — WalletCard does
+    // not rely on these):
+    //   - Removed `allow read: if true;`           (anonymous public read)
+    //   - Removed `allow read: if isAuthenticated();` (any-auth, no scope)
+    //
+    // Reads now require either Rally same-tenant membership or Guess
+    // hasStoreAccess at sales_agent level or higher.
     // ------------------------------------------------------------------------
+    match /vehicles/{vehicleId} {
+      // ---- Reads ----
+      allow read: if isSuperAdmin();
+      allow read: if isSignedIn() && inTenant(resource.data);
+      allow read: if isAuthenticated() && hasStoreAccess(resource.data.storeId, 5);
+
+      // ---- Server hydration (competitorx) ----
+      allow create: if request.resource.data.source == 'competitorx-hydration';
+      allow update: if resource.data.source == 'competitorx-hydration' ||
+                       request.resource.data.source == 'competitorx-hydration';
+
+      // ---- Rally writes ----
+      allow create: if isSuperAdmin() ||
+        (isLineStaff() && inTenant(request.resource.data));
+      allow update: if isSuperAdmin() ||
+        (isLineStaff() &&
+          inTenant(resource.data) &&
+          inTenant(request.resource.data) &&
+          request.resource.data.dealershipId == resource.data.dealershipId);
+      allow delete: if isSuperAdmin() ||
+        (isSm() && inTenant(resource.data));
+
+      // ---- Guess writes ----
+      allow write:  if hasStoreAccess(resource.data.storeId, 3);
+      allow create: if hasStoreAccess(request.resource.data.storeId, 3);
+    }
+
+    // ========================================================================
+    // RALLY-ONLY COLLECTION RULES
+    // ========================================================================
+
     match /dealerships/{dealershipId} {
       allow read: if isSuperAdmin() ||
         (isSignedIn() && dealershipId == userTenantId());
-
       allow create, update: if isSuperAdmin() ||
         (isSignedIn() && dealershipId == userTenantId() && isGm());
-
       allow delete: if isSuperAdmin();
     }
 
-    // ------------------------------------------------------------------------
-    // users/{uid} — DealerUser (legacy single-tenant identity)
-    // ------------------------------------------------------------------------
-    match /users/{uid} {
-      // Read self always; super admin always; same-dealership reads allowed
-      // (managers need full team list, line staff need contact info for
-      // activity attribution / @mentions). Cross-tenant reads are blocked.
-      allow read: if isSuperAdmin() || (
-        isSignedIn() && (
-          request.auth.uid == uid ||
-          (resource.data.dealershipId != null &&
-            resource.data.dealershipId == userTenantId()) ||
-          (resource.data.groupId != null &&
-            resource.data.groupId == userGroupId())
-        )
-      );
-
-      // Self-update is limited to non-privileged profile fields. Role,
-      // tenant, and permissions can only be changed by GM+ in the same
-      // tenant or by super admin (which uses the admin SDK anyway, but the
-      // explicit rule is here for completeness).
-      allow update: if isSuperAdmin() || (
-        isSignedIn() && (
-          (
-            request.auth.uid == uid &&
-            request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly([
-                'displayName', 'phone', 'photoURL', 'fcmTokens',
-                'preferences', 'lastActiveAt', 'updatedAt'
-              ])
-          ) ||
-          (
-            isGm() && resource.data.dealershipId == userTenantId() &&
-            request.resource.data.dealershipId == resource.data.dealershipId &&
-            request.resource.data.groupId == resource.data.groupId
-          )
-        )
-      );
-
-      // Create/delete users via admin SDK only — invite endpoint uses
-      // adminAuth + adminDb, which bypass these rules.
-      allow create, delete: if isSuperAdmin();
-    }
-
-    // ------------------------------------------------------------------------
-    // employees/{uid} — multi-tenant identity + memberships
-    // ------------------------------------------------------------------------
     match /employees/{uid} {
       allow read: if isSuperAdmin() || (isSignedIn() && request.auth.uid == uid);
-
-      // Self can edit limited profile fields.
       allow update: if isSuperAdmin() || (
         isSignedIn() && request.auth.uid == uid &&
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['displayName', 'phone', 'photoURL', 'lastActiveAt', 'updatedAt'])
       );
-
       allow create, delete: if isSuperAdmin();
 
       match /memberships/{membershipId} {
-        // User can read their own memberships; GM+ in same group can read
-        // memberships of teammates.
         allow read: if isSuperAdmin() ||
           (isSignedIn() && request.auth.uid == uid) ||
           (isSignedIn() && isGm() && resource.data.groupId == userGroupId());
-
-        // Membership writes go through admin SDK in the invite/role routes.
         allow write: if isSuperAdmin();
       }
     }
 
-    // ------------------------------------------------------------------------
-    // vehicles/{vehicleId}
-    // ------------------------------------------------------------------------
-    match /vehicles/{vehicleId} {
-      allow read: if isSuperAdmin() ||
-        (isSignedIn() && inTenant(resource.data));
-
-      // Any line-staff role in the same tenant can create/update vehicles
-      // (porters/detailers update status; salespeople update notes/holds).
-      allow create: if isSuperAdmin() ||
-        (isLineStaff() && inTenant(request.resource.data));
-
-      allow update: if isSuperAdmin() ||
-        (isLineStaff() &&
-          inTenant(resource.data) &&
-          inTenant(request.resource.data) &&
-          // Cannot move a vehicle between tenants
-          request.resource.data.dealershipId == resource.data.dealershipId);
-
-      // Hard delete: managers only (sales_manager+).
-      allow delete: if isSuperAdmin() ||
-        (isSm() && inTenant(resource.data));
-    }
-
-    // ------------------------------------------------------------------------
-    // vehicleLists/{listId} — saved lists, owner + sharedWith model
-    // ------------------------------------------------------------------------
     match /vehicleLists/{listId} {
-      // Read: owner, anyone in sharedWith, isShared=true within same tenant,
-      // or super admin. Cross-tenant access still blocked.
       allow read: if isSuperAdmin() || (
         isSignedIn() && inTenant(resource.data) && (
           resource.data.ownerId == request.auth.uid ||
@@ -348,27 +493,21 @@ service cloud.firestore {
           (resource.data.isShared == true)
         )
       );
-
-      // Create: must own + tenant must match caller's tenant.
       allow create: if isSuperAdmin() || (
         isSignedIn() &&
         request.resource.data.ownerId == request.auth.uid &&
         inTenant(request.resource.data)
       );
-
-      // Update / delete: owner only (within tenant), or SM+ in same tenant.
       allow update: if isSuperAdmin() || (
         isSignedIn() && inTenant(resource.data) && inTenant(request.resource.data) &&
         request.resource.data.dealershipId == resource.data.dealershipId &&
         (resource.data.ownerId == request.auth.uid || isSm())
       );
-
       allow delete: if isSuperAdmin() || (
         isSignedIn() && inTenant(resource.data) &&
         (resource.data.ownerId == request.auth.uid || isSm())
       );
 
-      // Items inherit access from the parent list.
       match /items/{itemId} {
         allow read: if isSuperAdmin() || (
           isSignedIn() &&
@@ -385,7 +524,6 @@ service cloud.firestore {
             )
           )
         );
-
         allow write: if isSuperAdmin() || (
           isSignedIn() &&
           exists(/databases/$(database)/documents/vehicleLists/$(listId)) &&
@@ -400,70 +538,43 @@ service cloud.firestore {
       }
     }
 
-    // ------------------------------------------------------------------------
-    // vehicleActivities/{activityId}
-    // ------------------------------------------------------------------------
     match /vehicleActivities/{activityId} {
       allow read: if isSuperAdmin() ||
         (isSignedIn() && inTenant(resource.data));
-
-      // Salesperson+ in tenant can create activity records (test drives,
-      // status moves, holds, etc.). Porter/detailer/etc. create activities
-      // via the same path when completing detail work, so we keep this open
-      // to all line staff rather than restricting to sales roles.
       allow create: if isSuperAdmin() || (
         isLineStaff() &&
         inTenant(request.resource.data) &&
-        // The userId on the activity must match the caller (no impersonation).
         (
           !('userId' in request.resource.data.keys()) ||
           request.resource.data.userId == request.auth.uid
         )
       );
-
-      // Update: only the activity owner OR sales_manager+ in same tenant.
       allow update: if isSuperAdmin() || (
         isSignedIn() && inTenant(resource.data) && inTenant(request.resource.data) &&
         request.resource.data.dealershipId == resource.data.dealershipId &&
         (resource.data.userId == request.auth.uid || isSm())
       );
-
-      // Delete: SM+ only — line staff cannot erase their own activity log.
       allow delete: if isSuperAdmin() ||
         (isSm() && inTenant(resource.data));
     }
 
-    // ------------------------------------------------------------------------
-    // nfcTags/{tagId}
-    // ------------------------------------------------------------------------
     match /nfcTags/{tagId} {
       allow read: if isSuperAdmin() ||
         (isSignedIn() && inTenant(resource.data));
-
-      // Programming tags is permitted for porter+ (same as iOS
-      // canProgramNfcTags default). Tag must belong to caller's tenant.
       allow create, update: if isSuperAdmin() || (
         isLineStaff() &&
         inTenant(request.resource.data) &&
-        // Cannot move a tag across tenants on update.
         (!('data' in resource) ||
           (inTenant(resource.data) &&
             request.resource.data.dealershipId == resource.data.dealershipId))
       );
-
       allow delete: if isSuperAdmin() ||
         (isSm() && inTenant(resource.data));
     }
 
-    // ------------------------------------------------------------------------
-    // interactions/{interactionId} — append-only audit of user actions
-    // ------------------------------------------------------------------------
     match /interactions/{interactionId} {
-      // Read: SM+ in the same tenant, or super admin.
       allow read: if isSuperAdmin() ||
         (isSm() && inTenant(resource.data));
-
-      // Create: any signed-in member of the tenant; userId must match caller.
       allow create: if isSuperAdmin() || (
         isSignedIn() &&
         inTenant(request.resource.data) &&
@@ -472,18 +583,12 @@ service cloud.firestore {
           request.resource.data.userId == request.auth.uid
         )
       );
-
-      // Append-only — no client-side updates or deletes (server SDK bypasses).
       allow update, delete: if false;
     }
 
-    // ------------------------------------------------------------------------
-    // testDrives/{testDriveId}
-    // ------------------------------------------------------------------------
     match /testDrives/{testDriveId} {
       allow read: if isSuperAdmin() ||
         (isSignedIn() && inTenant(resource.data));
-
       allow create: if isSuperAdmin() || (
         isLineStaff() &&
         inTenant(request.resource.data) &&
@@ -492,25 +597,17 @@ service cloud.firestore {
           request.resource.data.userId == request.auth.uid
         )
       );
-
-      // Owner (driver) or SM+ can update (e.g. end a test drive).
       allow update: if isSuperAdmin() || (
         isSignedIn() && inTenant(resource.data) && inTenant(request.resource.data) &&
         request.resource.data.dealershipId == resource.data.dealershipId &&
         (resource.data.userId == request.auth.uid || isSm())
       );
-
-      // Test drives are immutable records — no client deletes.
       allow delete: if isSuperAdmin();
     }
 
-    // ------------------------------------------------------------------------
-    // parkingSpaces/{spaceId}
-    // ------------------------------------------------------------------------
     match /parkingSpaces/{spaceId} {
       allow read: if isSuperAdmin() ||
         (isSignedIn() && inTenant(resource.data));
-
       allow create, update: if isSuperAdmin() || (
         isLineStaff() &&
         inTenant(request.resource.data) &&
@@ -518,19 +615,13 @@ service cloud.firestore {
           (inTenant(resource.data) &&
             request.resource.data.dealershipId == resource.data.dealershipId))
       );
-
       allow delete: if isSuperAdmin() ||
         (isSm() && inTenant(resource.data));
     }
 
-    // ------------------------------------------------------------------------
-    // alerts/{alertId}
-    // ------------------------------------------------------------------------
     match /alerts/{alertId} {
       allow read: if isSuperAdmin() ||
         (isSignedIn() && inTenant(resource.data));
-
-      // Only SM+ can author/dismiss alerts.
       allow create, update, delete: if isSuperAdmin() ||
         (isSm() && (
           (resource != null && inTenant(resource.data)) ||
@@ -538,37 +629,24 @@ service cloud.firestore {
         ));
     }
 
-    // ------------------------------------------------------------------------
-    // crmCustomers/{id}
-    // ------------------------------------------------------------------------
     match /crmCustomers/{id} {
       allow read: if isSuperAdmin() ||
         (isSignedIn() && inTenant(resource.data));
-
-      // Salespeople can create customer records; updates go through any
-      // sales-role line-staff member of the same tenant.
       allow create: if isSuperAdmin() || (
         isLineStaff() && inTenant(request.resource.data)
       );
-
       allow update: if isSuperAdmin() || (
         isLineStaff() &&
         inTenant(resource.data) && inTenant(request.resource.data) &&
         request.resource.data.dealershipId == resource.data.dealershipId
       );
-
-      // Hard deletes: SM+ only.
       allow delete: if isSuperAdmin() ||
         (isSm() && inTenant(resource.data));
     }
 
-    // ------------------------------------------------------------------------
-    // fleetVehicles/{id} and batteryReports/{id}
-    // ------------------------------------------------------------------------
     match /fleetVehicles/{id} {
       allow read: if isSuperAdmin() ||
         (isSignedIn() && inTenant(resource.data));
-      // Telemetry ingestion runs server-side (admin SDK).
       allow write: if isSuperAdmin();
     }
 
@@ -578,76 +656,45 @@ service cloud.firestore {
       allow write: if isSuperAdmin();
     }
 
-    // ------------------------------------------------------------------------
-    // recentCrmViews/{uid}/...  — per-user CRM history
-    // ------------------------------------------------------------------------
     match /recentCrmViews/{uid} {
       allow read, write: if isSuperAdmin() ||
         (isSignedIn() && request.auth.uid == uid);
-
       match /customers/{docId} {
         allow read, write: if isSuperAdmin() ||
           (isSignedIn() && request.auth.uid == uid);
       }
-
       match /meta/{docId} {
-        // Includes `dcSession` and similar per-user tokens.
         allow read, write: if isSuperAdmin() ||
           (isSignedIn() && request.auth.uid == uid);
       }
     }
 
-    // ------------------------------------------------------------------------
-    // auditLogs/{logId} — append-only audit; written by admin SDK only
-    // ------------------------------------------------------------------------
     match /auditLogs/{logId} {
-      // Read: super admin always; owner of the group can read their own
-      // group's entries.
       allow read: if isSuperAdmin() || (
         isOwner() && resource.data.groupId != null &&
         resource.data.groupId == userGroupId()
       );
-
-      // No client writes. All audit entries are written via firebase-admin
-      // from server route handlers, which bypass these rules.
       allow write: if false;
     }
 
-    // ------------------------------------------------------------------------
-    // aiUsage/{logId} — append-only AI request log; written by admin SDK only
-    // ------------------------------------------------------------------------
     match /aiUsage/{logId} {
-      // Read: super admin only (powers admin AI page usage charts via the
-      // admin route handler which bypasses rules; this rule blocks any direct
-      // client SDK reads from non-super-admin users).
       allow read: if isSuperAdmin();
-
-      // No client writes — staff AI chat route writes via firebase-admin.
       allow write: if false;
     }
 
-    // ------------------------------------------------------------------------
-    // featureFlags/{flagId}
-    // ------------------------------------------------------------------------
     match /featureFlags/{flagId} {
-      // All authenticated users can read feature flags (used to gate UI).
       allow read: if isSignedIn();
-      // Only super admins can toggle.
       allow write: if isSuperAdmin();
     }
 
-    // ------------------------------------------------------------------------
-    // system/{doc} — operational config (incl. system/superAdmins)
-    // ------------------------------------------------------------------------
     match /system/{doc} {
       allow read, write: if isSuperAdmin();
     }
 
-    // ------------------------------------------------------------------------
+    // ========================================================================
     // Deny-by-default catch-all
-    // Any collection not explicitly handled above is locked. Add a new
-    // `match` block before this one to grant access.
-    // ------------------------------------------------------------------------
+    // Any collection not explicitly handled above is locked.
+    // ========================================================================
     match /{document=**} {
       allow read, write: if false;
     }

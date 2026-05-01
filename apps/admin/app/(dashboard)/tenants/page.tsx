@@ -13,6 +13,9 @@ import {
   FilterBar,
   Skeleton,
   useToast,
+  Modal,
+  ModalHeader,
+  ModalBody,
 } from '@rally/ui';
 import type { FilterOption } from '@rally/ui';
 import type { ColumnDef } from '@tanstack/react-table';
@@ -25,6 +28,11 @@ import {
   Play,
   Pause,
   Trash2,
+  AlertTriangle,
+  Globe,
+  Server,
+  Database,
+  UserX,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -87,17 +95,28 @@ const STATUS_FILTER_OPTIONS: FilterOption[] = [
 ] as const;
 
 // ---------------------------------------------------------------------------
+// Tenant action types
+// ---------------------------------------------------------------------------
+
+type TenantAction = 'suspend' | 'activate' | 'deprovision';
+
+interface PendingAction {
+  tenant: TenantRow;
+  action: TenantAction;
+}
+
+// ---------------------------------------------------------------------------
 // Action Dropdown
 // ---------------------------------------------------------------------------
 
 function TenantActionMenu({
   tenant,
   onClose,
-  onAction,
+  onRequestAction,
 }: {
   tenant: TenantRow;
   onClose: () => void;
-  onAction: (tenantId: string, action: 'suspend' | 'activate' | 'deprovision') => void;
+  onRequestAction: (tenant: TenantRow, action: TenantAction) => void;
 }) {
   return (
     <div
@@ -110,7 +129,7 @@ function TenantActionMenu({
           className="flex w-full items-center gap-2 px-3 py-2 text-sm text-text-secondary hover:bg-surface-border hover:text-text-primary transition-colors"
           onClick={(e) => {
             e.stopPropagation();
-            onAction(tenant.id, 'activate');
+            onRequestAction(tenant, 'activate');
             onClose();
           }}
         >
@@ -124,7 +143,7 @@ function TenantActionMenu({
           className="flex w-full items-center gap-2 px-3 py-2 text-sm text-status-warning hover:bg-surface-border transition-colors"
           onClick={(e) => {
             e.stopPropagation();
-            onAction(tenant.id, 'suspend');
+            onRequestAction(tenant, 'suspend');
             onClose();
           }}
         >
@@ -138,9 +157,7 @@ function TenantActionMenu({
         className="flex w-full items-center gap-2 px-3 py-2 text-sm text-status-error hover:bg-surface-border transition-colors"
         onClick={(e) => {
           e.stopPropagation();
-          if (window.confirm(`Are you sure you want to deprovision "${tenant.groupName}"? This action cannot be undone.`)) {
-            onAction(tenant.id, 'deprovision');
-          }
+          onRequestAction(tenant, 'deprovision');
           onClose();
         }}
       >
@@ -157,10 +174,10 @@ function TenantActionMenu({
 
 function TenantActionCell({
   tenant,
-  onAction,
+  onRequestAction,
 }: {
   tenant: TenantRow;
-  onAction: (tenantId: string, action: 'suspend' | 'activate' | 'deprovision') => void;
+  onRequestAction: (tenant: TenantRow, action: TenantAction) => void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -181,9 +198,139 @@ function TenantActionCell({
         <TenantActionMenu
           tenant={tenant}
           onClose={() => setOpen(false)}
-          onAction={onAction}
+          onRequestAction={onRequestAction}
         />
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Confirmation Modal Body
+// ---------------------------------------------------------------------------
+
+function ActivateBody({ tenant }: { tenant: TenantRow }) {
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-text-secondary">
+        This will re-enable <span className="font-medium text-text-primary">{tenant.groupName}</span>.
+        All previously-disabled member accounts will regain access on their next sign-in.
+      </p>
+      <ul className="space-y-2 text-xs text-text-tertiary">
+        <li className="flex items-start gap-2">
+          <UserX className="mt-0.5 h-3.5 w-3.5 shrink-0 text-status-success" />
+          <span>Member accounts re-enabled in Firebase Auth</span>
+        </li>
+        <li className="flex items-start gap-2">
+          <Database className="mt-0.5 h-3.5 w-3.5 shrink-0 text-status-success" />
+          <span>Group status set to <span className="font-mono">active</span></span>
+        </li>
+      </ul>
+    </div>
+  );
+}
+
+function SuspendBody({ tenant }: { tenant: TenantRow }) {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-start gap-3 rounded-rally border border-status-warning/30 bg-status-warning/10 p-3">
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-status-warning" />
+        <div>
+          <p className="text-sm font-medium text-text-primary">
+            Suspend {tenant.groupName}?
+          </p>
+          <p className="mt-1 text-xs text-text-secondary">
+            All members will be signed out and unable to access the platform until the
+            tenant is re-activated. Data is preserved.
+          </p>
+        </div>
+      </div>
+      <ul className="space-y-2 text-xs text-text-tertiary">
+        <li className="flex items-start gap-2">
+          <UserX className="mt-0.5 h-3.5 w-3.5 shrink-0 text-status-warning" />
+          <span>{tenant.usersCount} member account{tenant.usersCount === 1 ? '' : 's'} disabled in Firebase Auth</span>
+        </li>
+        <li className="flex items-start gap-2">
+          <Database className="mt-0.5 h-3.5 w-3.5 shrink-0 text-status-warning" />
+          <span>Group status set to <span className="font-mono">suspended</span></span>
+        </li>
+        <li className="flex items-start gap-2">
+          <Globe className="mt-0.5 h-3.5 w-3.5 shrink-0 text-text-tertiary" />
+          <span>DNS, vhost, and Firestore data are preserved (reversible)</span>
+        </li>
+      </ul>
+    </div>
+  );
+}
+
+function DeprovisionBody({
+  tenant,
+  confirmText,
+  onConfirmTextChange,
+}: {
+  tenant: TenantRow;
+  confirmText: string;
+  onConfirmTextChange: (value: string) => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start gap-3 rounded-rally border border-status-error/30 bg-status-error/10 p-3">
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-status-error" />
+        <div>
+          <p className="text-sm font-medium text-text-primary">
+            Deprovision {tenant.groupName}?
+          </p>
+          <p className="mt-1 text-xs text-text-secondary">
+            This is destructive. The tenant will stop resolving immediately and the
+            following resources will be removed:
+          </p>
+        </div>
+      </div>
+
+      <ul className="space-y-2 text-xs text-text-secondary">
+        <li className="flex items-start gap-2">
+          <Globe className="mt-0.5 h-3.5 w-3.5 shrink-0 text-status-error" />
+          <span>
+            Cloudflare DNS A record for{' '}
+            <span className="font-[family-name:var(--font-geist-mono)] text-text-primary">
+              {tenant.subdomain}
+            </span>
+          </span>
+        </li>
+        <li className="flex items-start gap-2">
+          <Server className="mt-0.5 h-3.5 w-3.5 shrink-0 text-status-error" />
+          <span>Plesk vhost configuration on the VPS</span>
+        </li>
+        <li className="flex items-start gap-2">
+          <Database className="mt-0.5 h-3.5 w-3.5 shrink-0 text-status-error" />
+          <span>Firestore tenant config (group status set to <span className="font-mono">deprovisioned</span>)</span>
+        </li>
+        <li className="flex items-start gap-2">
+          <UserX className="mt-0.5 h-3.5 w-3.5 shrink-0 text-status-error" />
+          <span>Principal account disabled and {tenant.usersCount} member account{tenant.usersCount === 1 ? '' : 's'} revoked</span>
+        </li>
+      </ul>
+
+      <div>
+        <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-text-secondary">
+          Type the slug to confirm
+        </label>
+        <Input
+          value={confirmText}
+          onChange={(e) => onConfirmTextChange(e.target.value)}
+          placeholder={tenant.slug}
+          autoComplete="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          aria-label={`Type ${tenant.slug} to confirm`}
+        />
+        <p className="mt-1 text-xs text-text-tertiary">
+          Expected:{' '}
+          <span className="font-[family-name:var(--font-geist-mono)] text-text-primary">
+            {tenant.slug}
+          </span>
+        </p>
+      </div>
     </div>
   );
 }
@@ -202,7 +349,13 @@ export default function TenantsListPage() {
   const [tenantRows, setTenantRows] = useState<TenantRow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  // Confirmation modal state
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [confirmText, setConfirmText] = useState('');
+
+  const fetchTenants = useCallback(() => {
+    setLoading(true);
     authFetch('/api/admin/tenants')
       .then((res) => res.json())
       .then((json) => {
@@ -237,37 +390,87 @@ export default function TenantsListPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Tenant action handler
-  const handleTenantAction = useCallback(
-    async (tenantId: string, action: 'suspend' | 'activate' | 'deprovision') => {
-      try {
-        const res = await authFetch(`/api/admin/tenants/${tenantId}/${action}`, {
-          method: 'POST',
-        });
+  useEffect(() => {
+    fetchTenants();
+  }, [fetchTenants]);
 
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({ message: 'Unknown error' })) as { message?: string };
-          throw new Error(body.message ?? `Failed to ${action} tenant`);
-        }
+  // Open the confirmation modal for a row action
+  const handleRequestAction = useCallback((tenant: TenantRow, action: TenantAction) => {
+    setPendingAction({ tenant, action });
+    setConfirmText('');
+  }, []);
 
-        toast({
-          type: 'success',
-          title: `Tenant ${action}d`,
-          description: `Successfully ${action === 'activate' ? 'activated' : action === 'suspend' ? 'suspended' : 'deprovisioned'} the tenant.`,
-        });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'An unexpected error occurred';
-        toast({
-          type: 'error',
-          title: `Failed to ${action} tenant`,
-          description: message,
-        });
+  const closeModal = useCallback(() => {
+    if (submitting) return;
+    setPendingAction(null);
+    setConfirmText('');
+  }, [submitting]);
+
+  // Optimistic status mapping for suspend/activate (deprovision goes to its own state)
+  const optimisticStatusFor = (action: TenantAction): TenantRow['status'] => {
+    switch (action) {
+      case 'activate':
+        return 'active';
+      case 'suspend':
+        return 'suspended';
+      case 'deprovision':
+        return 'deprovisioned';
+    }
+  };
+
+  // Execute the confirmed action
+  const handleConfirmAction = useCallback(async () => {
+    if (!pendingAction) return;
+    const { tenant, action } = pendingAction;
+
+    setSubmitting(true);
+    const previousStatus = tenant.status;
+
+    // Optimistic update
+    setTenantRows((prev) =>
+      prev.map((t) => (t.id === tenant.id ? { ...t, status: optimisticStatusFor(action) } : t)),
+    );
+
+    try {
+      const res = await authFetch(`/api/admin/tenants/${tenant.id}/${action}`, {
+        method: 'POST',
+      });
+
+      const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+
+      if (!res.ok) {
+        throw new Error(body.error ?? body.message ?? `Failed to ${action} tenant`);
       }
-    },
-    [toast],
-  );
 
-  // Column definitions (defined inside component to access handleTenantAction)
+      toast({
+        type: 'success',
+        title: `Tenant ${action === 'activate' ? 'activated' : action === 'suspend' ? 'suspended' : 'deprovisioned'}`,
+        description: `${tenant.groupName} has been ${action === 'activate' ? 'reactivated' : action === 'suspend' ? 'suspended' : 'deprovisioned'}.`,
+      });
+
+      setPendingAction(null);
+      setConfirmText('');
+
+      // Re-sync from server to get fresh aggregate counts and authoritative status
+      fetchTenants();
+    } catch (err) {
+      // Roll back optimistic update
+      setTenantRows((prev) =>
+        prev.map((t) => (t.id === tenant.id ? { ...t, status: previousStatus } : t)),
+      );
+
+      const message = err instanceof Error ? err.message : 'An unexpected error occurred';
+      toast({
+        type: 'error',
+        title: `Failed to ${action} tenant`,
+        description: message,
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  }, [pendingAction, toast, fetchTenants]);
+
+  // Column definitions (defined inside component to access handleRequestAction)
   const columns: ColumnDef<TenantRow, unknown>[] = useMemo(() => [
     {
       accessorKey: 'slug',
@@ -350,11 +553,11 @@ export default function TenantsListPage() {
       cell: ({ row }) => (
         <TenantActionCell
           tenant={row.original}
-          onAction={handleTenantAction}
+          onRequestAction={handleRequestAction}
         />
       ),
     },
-  ], [handleTenantAction]);
+  ], [handleRequestAction]);
 
   // Filter by status
   const filteredTenants = useMemo(() => {
@@ -487,6 +690,81 @@ export default function TenantsListPage() {
         }
         defaultPageSize={25}
       />
+
+      {/* -- Confirmation Modal ------------------------------------------ */}
+      <Modal
+        open={pendingAction !== null}
+        onClose={closeModal}
+        size="lg"
+        labelledBy="tenant-action-modal-title"
+      >
+        <ModalHeader
+          title={
+            pendingAction?.action === 'activate'
+              ? 'Activate Tenant'
+              : pendingAction?.action === 'suspend'
+                ? 'Suspend Tenant'
+                : 'Deprovision Tenant'
+          }
+          titleId="tenant-action-modal-title"
+          onClose={closeModal}
+          closeDisabled={submitting}
+        />
+        <ModalBody>
+        {pendingAction && (
+          <div className="space-y-5">
+            {pendingAction.action === 'activate' && (
+              <ActivateBody tenant={pendingAction.tenant} />
+            )}
+            {pendingAction.action === 'suspend' && (
+              <SuspendBody tenant={pendingAction.tenant} />
+            )}
+            {pendingAction.action === 'deprovision' && (
+              <DeprovisionBody
+                tenant={pendingAction.tenant}
+                confirmText={confirmText}
+                onConfirmTextChange={setConfirmText}
+              />
+            )}
+
+            <div className="flex items-center justify-end gap-2 border-t border-surface-border pt-4">
+              <Button
+                type="button"
+                variant="ghost"
+                size="md"
+                onClick={closeModal}
+                disabled={submitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant={pendingAction.action === 'activate' ? 'primary' : 'danger'}
+                size="md"
+                onClick={handleConfirmAction}
+                disabled={
+                  submitting ||
+                  (pendingAction.action === 'deprovision' &&
+                    confirmText.trim() !== pendingAction.tenant.slug)
+                }
+              >
+                {submitting
+                  ? pendingAction.action === 'activate'
+                    ? 'Activating…'
+                    : pendingAction.action === 'suspend'
+                      ? 'Suspending…'
+                      : 'Deprovisioning…'
+                  : pendingAction.action === 'activate'
+                    ? 'Activate'
+                    : pendingAction.action === 'suspend'
+                      ? 'Suspend'
+                      : 'Deprovision'}
+              </Button>
+            </div>
+          </div>
+        )}
+        </ModalBody>
+      </Modal>
     </div>
   );
 }

@@ -55,8 +55,8 @@ interface CronJob {
   id: string;
   name: string;
   schedule: string;
-  lastRun: string;
-  nextRun: string;
+  lastRun: string | null;
+  nextRun: string | null;
   status: 'active' | 'paused' | 'error';
 }
 
@@ -67,13 +67,14 @@ interface CronJob {
 interface ServerMetrics {
   cpu: { used: number; label: string };
   ram: { usedGB: number; totalGB: number; label: string };
-  disk: { usedGB: number; totalGB: number; label: string };
-  network: { avgMbps: number; label: string };
+  disk: { usedGB: number; totalGB: number; label: string } | null;
+  network: { avgMbps: number | null; label: string };
 }
 
 interface BroadcastInfo {
   message: string;
   timestamp: string;
+  expiresAt?: string;
 }
 
 interface HealthResponse {
@@ -83,9 +84,11 @@ interface HealthResponse {
     ram: ServerMetrics['ram'];
     disk: ServerMetrics['disk'];
     network: ServerMetrics['network'];
-    pm2: PM2Process[];
+    pm2: PM2Process[] | null;
     cronJobs: CronJob[];
-    lastBroadcast: BroadcastInfo;
+    lastBroadcast: BroadcastInfo | null;
+    maintenance?: { enabled: boolean };
+    errors?: string[];
   };
 }
 
@@ -93,7 +96,8 @@ interface HealthResponse {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function formatTimestamp(iso: string): string {
+function formatTimestamp(iso: string | null | undefined): string {
+  if (!iso) return '—';
   return new Date(iso).toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -170,6 +174,7 @@ export default function SystemHealthPage() {
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [broadcastMessage, setBroadcastMessage] = useState('');
   const [confirmingAction, setConfirmingAction] = useState<string | null>(null);
+  const [healthErrors, setHealthErrors] = useState<string[]>([]);
 
   // ── Fetch system health from API ────────────────────────────────
 
@@ -185,9 +190,11 @@ export default function SystemHealthPage() {
             disk: data.data.disk,
             network: data.data.network,
           });
-          setPm2Processes(data.data.pm2);
+          setPm2Processes(data.data.pm2 ?? []);
           setCronJobs(data.data.cronJobs);
           setLastBroadcast(data.data.lastBroadcast);
+          setMaintenanceMode(Boolean(data.data.maintenance?.enabled));
+          setHealthErrors(data.data.errors ?? []);
         }
       })
       .catch(() => {
@@ -490,6 +497,23 @@ export default function SystemHealthPage() {
         </div>
       )}
 
+      {/* Partial-read errors */}
+      {healthErrors.length > 0 && (
+        <div className="flex items-start gap-3 rounded-rally-lg border border-status-warning/30 bg-status-warning/10 px-4 py-3">
+          <AlertTriangle className="h-5 w-5 text-status-warning shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-status-warning">
+              Some metrics could not be read
+            </p>
+            <ul className="text-xs text-text-secondary mt-1 space-y-0.5 list-disc list-inside">
+              {healthErrors.map((err) => (
+                <li key={err} className="font-[family-name:var(--font-geist-mono)]">{err}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+
       {/* ── Server Metrics ─────────────────────────────────────── */}
       {metrics ? (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -542,19 +566,27 @@ export default function SystemHealthPage() {
             <div className="flex items-center gap-2 mb-3">
               <HardDrive className="h-4 w-4 text-status-warning" />
               <span className="text-xs font-medium uppercase tracking-wider text-text-secondary">
-                {metrics.disk.label}
+                {metrics.disk?.label ?? 'Disk Usage'}
               </span>
             </div>
-            <p className="text-3xl font-bold text-text-primary font-[family-name:var(--font-geist-mono)] mb-2">
-              {metrics.disk.usedGB}
-              <span className="text-sm text-text-secondary ml-1">/ {metrics.disk.totalGB}GB</span>
-            </p>
-            <div className="h-2 w-full rounded-full bg-surface-overlay overflow-hidden">
-              <div
-                className="h-2 rounded-full bg-status-warning transition-all"
-                style={{ width: `${Math.round((metrics.disk.usedGB / metrics.disk.totalGB) * 100)}%` }}
-              />
-            </div>
+            {metrics.disk ? (
+              <>
+                <p className="text-3xl font-bold text-text-primary font-[family-name:var(--font-geist-mono)] mb-2">
+                  {metrics.disk.usedGB}
+                  <span className="text-sm text-text-secondary ml-1">/ {metrics.disk.totalGB}GB</span>
+                </p>
+                <div className="h-2 w-full rounded-full bg-surface-overlay overflow-hidden">
+                  <div
+                    className="h-2 rounded-full bg-status-warning transition-all"
+                    style={{ width: `${Math.round((metrics.disk.usedGB / metrics.disk.totalGB) * 100)}%` }}
+                  />
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-text-tertiary font-[family-name:var(--font-geist-mono)]">
+                Unavailable
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -567,20 +599,27 @@ export default function SystemHealthPage() {
                 {metrics.network.label}
               </span>
             </div>
-            <p className="text-3xl font-bold text-text-primary font-[family-name:var(--font-geist-mono)] mb-2">
-              {metrics.network.avgMbps}
-              <span className="text-sm text-text-secondary ml-1">Mbps avg</span>
-            </p>
-            {/* Sparkline placeholder */}
-            <div className="flex items-end gap-px h-6">
-              {[40, 65, 55, 70, 50, 80, 60, 45, 75, 55, 65, 70].map((h, i) => (
-                <div
-                  key={i}
-                  className="flex-1 rounded-sm bg-status-success/40"
-                  style={{ height: `${h}%` }}
-                />
-              ))}
-            </div>
+            {metrics.network.avgMbps !== null ? (
+              <>
+                <p className="text-3xl font-bold text-text-primary font-[family-name:var(--font-geist-mono)] mb-2">
+                  {metrics.network.avgMbps}
+                  <span className="text-sm text-text-secondary ml-1">Mbps avg</span>
+                </p>
+                <div className="flex items-end gap-px h-6">
+                  {[40, 65, 55, 70, 50, 80, 60, 45, 75, 55, 65, 70].map((h, i) => (
+                    <div
+                      key={i}
+                      className="flex-1 rounded-sm bg-status-success/40"
+                      style={{ height: `${h}%` }}
+                    />
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-text-tertiary font-[family-name:var(--font-geist-mono)]">
+                Not measured
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>

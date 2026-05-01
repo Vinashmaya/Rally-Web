@@ -10,6 +10,7 @@ import {
   Shield,
   Calendar,
   Download,
+  FileText,
 } from 'lucide-react';
 import {
   Card,
@@ -19,7 +20,9 @@ import {
   Button,
   Badge,
   Skeleton,
+  useToast,
 } from '@rally/ui';
+import { authFetch } from '@rally/firebase';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -217,9 +220,16 @@ function DateRangeSelector({
 interface ReportCardProps {
   template: ReportTemplate;
   dateRange: string;
+  onExport: (template: ReportTemplate, format: 'csv' | 'pdf') => void;
+  busyFormat: 'csv' | 'pdf' | null;
 }
 
-function ReportCard({ template, dateRange }: ReportCardProps) {
+function ReportCard({
+  template,
+  dateRange,
+  onExport,
+  busyFormat,
+}: ReportCardProps) {
   const Icon = template.icon;
 
   return (
@@ -246,10 +256,28 @@ function ReportCard({ template, dateRange }: ReportCardProps) {
           </Badge>
         </div>
       </CardContent>
-      <CardFooter className="pt-3">
-        <Button variant="secondary" size="sm" disabled className="w-full">
+      <CardFooter className="pt-3 flex gap-2">
+        <Button
+          variant="secondary"
+          size="sm"
+          className="flex-1"
+          onClick={() => onExport(template, 'csv')}
+          loading={busyFormat === 'csv'}
+          disabled={busyFormat !== null}
+        >
           <Download className="h-3.5 w-3.5" />
-          Export CSV
+          CSV
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          className="flex-1"
+          onClick={() => onExport(template, 'pdf')}
+          loading={busyFormat === 'pdf'}
+          disabled={busyFormat !== null}
+        >
+          <FileText className="h-3.5 w-3.5" />
+          PDF
         </Button>
       </CardFooter>
     </Card>
@@ -278,10 +306,22 @@ function ReportsSkeleton() {
 // Page
 // ---------------------------------------------------------------------------
 
+// TODO: Scheduled report delivery via VPS cron + email.
+// Plan: cron hits POST /api/reports/[reportId]/deliver
+// → fetches the same data, generates PDF, sends to subscribers via SendGrid/Postmark.
+// Subscriber list lives in groups/{groupId}/config/scheduledReports.
+
+interface BusyState {
+  templateId: string;
+  format: 'csv' | 'pdf';
+}
+
 export default function ReportsPage() {
+  const { toast } = useToast();
   const defaultRange = getPresetRange('last-30');
   const [startDate, setStartDate] = useState(defaultRange.start);
   const [endDate, setEndDate] = useState(defaultRange.end);
+  const [busy, setBusy] = useState<BusyState | null>(null);
 
   const handlePreset = (preset: DatePreset) => {
     const range = getPresetRange(preset);
@@ -293,6 +333,56 @@ export default function ReportsPage() {
     if (!startDate || !endDate) return 'Select a date range';
     return `${formatDisplayDate(startDate)} - ${formatDisplayDate(endDate)}`;
   }, [startDate, endDate]);
+
+  // Download a report as CSV or PDF. Streams the response to a Blob and
+  // pushes it through a synthetic <a download> click — same pattern used
+  // elsewhere in the app for file downloads.
+  const handleExport = async (
+    template: ReportTemplate,
+    format: 'csv' | 'pdf',
+  ) => {
+    setBusy({ templateId: template.id, format });
+    try {
+      const qs = new URLSearchParams({ format });
+      if (startDate) qs.set('start', startDate);
+      if (endDate) qs.set('end', endDate);
+
+      const res = await authFetch(
+        `/api/reports/${template.id}/export?${qs.toString()}`,
+      );
+
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `Export failed (${res.status})`);
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${template.id}-${new Date().toISOString().slice(0, 10)}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      toast({
+        type: 'success',
+        title: 'Report exported',
+        description: `${template.title} (${format.toUpperCase()}) downloaded.`,
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'An unexpected error occurred';
+      toast({
+        type: 'error',
+        title: 'Export failed',
+        description: message,
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
 
   return (
     <div className="p-6 space-y-6">
@@ -320,13 +410,17 @@ export default function ReportsPage() {
             key={template.id}
             template={template}
             dateRange={dateRangeDisplay}
+            onExport={handleExport}
+            busyFormat={
+              busy && busy.templateId === template.id ? busy.format : null
+            }
           />
         ))}
       </div>
 
       {/* Footer note */}
       <p className="text-xs text-text-tertiary text-center pt-2">
-        Report exports will be available in a future update.
+        Scheduled email delivery is coming in a future milestone.
       </p>
     </div>
   );

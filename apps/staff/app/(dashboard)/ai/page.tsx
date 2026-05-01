@@ -5,7 +5,6 @@ import { authFetch } from '@rally/firebase';
 import {
   Sparkles,
   Send,
-  Bot,
   User,
   ArrowRight,
   AlertCircle,
@@ -19,7 +18,6 @@ import {
   Skeleton,
 } from '@rally/ui';
 import { useToast } from '@rally/ui';
-import { useTenantStore } from '@rally/services';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -178,7 +176,6 @@ function AISkeleton() {
 
 export default function AIPage() {
   const { toast } = useToast();
-  const dealershipId = useTenantStore((s) => s.activeStore?.id ?? '');
   const [messages, setMessages] = useState<ChatMessage[]>([...INITIAL_MESSAGES]);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -193,6 +190,17 @@ export default function AIPage() {
     const trimmed = text.trim();
     if (!trimmed) return;
 
+    const aiMessageId = `msg-ai-${Date.now()}`;
+
+    // Capture conversation history BEFORE we mutate state.
+    // Anthropic requires alternating user/assistant turns starting with user.
+    const history = messages
+      .filter((m) => m.role === 'user' || m.role === 'ai')
+      .map((m) => ({
+        role: m.role === 'ai' ? ('assistant' as const) : ('user' as const),
+        content: m.content,
+      }));
+
     // Add user message
     const userMessage: ChatMessage = {
       id: `msg-user-${Date.now()}`,
@@ -204,37 +212,88 @@ export default function AIPage() {
     setInputValue('');
     setIsTyping(true);
 
+    // Seed an empty AI message we can append delta text into
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: aiMessageId,
+        role: 'ai',
+        content: '',
+        timestamp: new Date(),
+      },
+    ]);
+
     try {
       const res = await authFetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: trimmed }],
-          dealershipId,
+          messages: [...history, { role: 'user', content: trimmed }],
         }),
       });
 
-      if (!res.ok) {
-        throw new Error(`Server error: ${res.status}`);
+      if (!res.ok || !res.body) {
+        // Try to parse error JSON if present
+        let errMsg = `Server error: ${res.status}`;
+        try {
+          const errJson = await res.json() as { error?: unknown; code?: string };
+          if (typeof errJson.error === 'string') errMsg = errJson.error;
+        } catch {
+          // body wasn't JSON
+        }
+        throw new Error(errMsg);
       }
 
-      const json = await res.json() as {
-        success: boolean;
-        data: { message: { role: string; content: string } };
-        error?: string;
-      };
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let receivedText = '';
+      let streamError: string | null = null;
 
-      if (!json.success || !json.data?.message?.content) {
-        throw new Error(json.error ?? 'Invalid response from AI backend');
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        let newlineIdx: number;
+
+        while ((newlineIdx = buffer.indexOf('\n')) !== -1) {
+          const line = buffer.slice(0, newlineIdx).trim();
+          buffer = buffer.slice(newlineIdx + 1);
+          if (!line) continue;
+
+          try {
+            const frame = JSON.parse(line) as
+              | { type: 'delta'; text: string }
+              | { type: 'done'; usage?: { inputTokens: number; outputTokens: number } }
+              | { type: 'error'; message: string };
+
+            if (frame.type === 'delta') {
+              receivedText += frame.text;
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === aiMessageId ? { ...m, content: receivedText } : m,
+                ),
+              );
+            } else if (frame.type === 'error') {
+              streamError = frame.message;
+            }
+            // 'done' frame currently ignored on the client
+          } catch {
+            // Ignore malformed lines — keep the stream going
+          }
+        }
       }
 
-      const aiMessage: ChatMessage = {
-        id: `msg-ai-${Date.now()}`,
-        role: 'ai',
-        content: json.data.message.content,
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, aiMessage]);
+      if (streamError) {
+        throw new Error(streamError);
+      }
+
+      // If the stream produced no text at all, treat that as an error
+      if (!receivedText) {
+        throw new Error('AI returned an empty response.');
+      }
     } catch (err) {
       toast({
         type: 'error',
@@ -242,19 +301,22 @@ export default function AIPage() {
         description: err instanceof Error ? err.message : 'An unexpected error occurred.',
       });
 
-      // Add fallback message so the conversation doesn't look broken
-      const fallbackMessage: ChatMessage = {
-        id: `msg-ai-fallback-${Date.now()}`,
-        role: 'ai',
-        content:
-          "I wasn't able to process that request. Please try again, or contact support if the issue persists.",
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, fallbackMessage]);
+      // Replace the in-flight AI bubble with a fallback message
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === aiMessageId
+            ? {
+                ...m,
+                content:
+                  "I wasn't able to process that request. Please try again, or contact support if the issue persists.",
+              }
+            : m,
+        ),
+      );
     } finally {
       setIsTyping(false);
     }
-  }, [dealershipId, toast]);
+  }, [messages, toast]);
 
   const handleSend = () => {
     sendMessage(inputValue);

@@ -67,6 +67,12 @@ export function middleware(request: NextRequest) {
     return response;
   }
 
+  // Principal-only paths: /billing is reserved for owners + super admins.
+  // Other managers are bounced to the dashboard.
+  if (pathname.startsWith('/billing') && !isSuperAdmin && payload.role !== 'owner') {
+    return NextResponse.redirect(new URL('/', request.url));
+  }
+
   return NextResponse.next();
 }
 

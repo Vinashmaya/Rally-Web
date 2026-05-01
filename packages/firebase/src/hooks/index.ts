@@ -19,3 +19,5 @@ export { useTenants } from './useTenants';
 export { useAllUsers } from './useAllUsers';
 export { useAllVehicles } from './useAllVehicles';
 export { useAllActivities } from './useAllActivities';
+export { useNfcTags } from './useNfcTags';
+export { useAllVehicleLists } from './useAllVehicleLists';

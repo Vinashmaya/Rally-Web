@@ -1,6 +1,6 @@
 # Claude Code Prompt: Rally Web Platform
 
-> **Usage:** Place this file alongside `CLAUDE.md`, `rules.md`, and `soul.md` in the project root. Claude Code reads `CLAUDE.md` automatically; it references this spec.
+> **Usage:** Place this file alongside `CLAUDE.md`, `RULES.md`, and `SOUL.md` in the project root. Claude Code reads `CLAUDE.md` automatically; it references this spec.
 
 ---
 
@@ -187,8 +187,8 @@ rally-web/
 ├── pnpm-workspace.yaml
 ├── .env.example
 ├── CLAUDE.md
-├── rules.md
-└── soul.md
+├── RULES.md
+└── SOUL.md
 ```
 
 ### PM2 Ecosystem

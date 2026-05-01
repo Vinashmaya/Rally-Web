@@ -3,6 +3,7 @@ import { GeistSans } from 'geist/font/sans';
 import { GeistMono } from 'geist/font/mono';
 import './globals.css';
 import { AppProviders } from './providers';
+import { ImpersonationHandoff } from '@rally/ui';
 
 export const metadata: Metadata = {
   title: 'Rally Management',
@@ -24,7 +25,10 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable} dark`}>
       <body className="bg-surface-base text-text-primary antialiased min-h-screen">
-        <AppProviders>{children}</AppProviders>
+        <AppProviders>
+          <ImpersonationHandoff />
+          {children}
+        </AppProviders>
       </body>
     </html>
   );

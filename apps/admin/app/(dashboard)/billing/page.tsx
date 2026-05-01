@@ -1,6 +1,8 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { authFetch } from '@rally/firebase';
 import {
   Card,
   CardHeader,
@@ -10,7 +12,7 @@ import {
   Skeleton,
   DataTable,
   RallyBarChart,
-  DateRangePicker,
+  EmptyState,
   useToast,
 } from '@rally/ui';
 import type { BadgeProps } from '@rally/ui';
@@ -20,51 +22,66 @@ import {
   TrendingUp,
   Users,
   BarChart3,
-  MoreHorizontal,
-  ArrowDownCircle,
+  ArrowRight,
   CreditCard,
+  AlertTriangle,
+  Activity,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
-// Types
+// API response types
 // ---------------------------------------------------------------------------
 
-interface Subscription {
+type StripeStatus =
+  | 'active'
+  | 'trialing'
+  | 'past_due'
+  | 'canceled'
+  | 'unpaid'
+  | 'incomplete'
+  | 'incomplete_expired'
+  | 'paused';
+
+interface SubscriptionApi {
   id: string;
-  tenantName: string;
-  tenantSlug: string;
-  plan: 'trial' | 'starter' | 'pro' | 'enterprise';
-  status: 'active' | 'past_due' | 'cancelled' | 'trial';
-  amountCents: number;
-  nextBillingDate: string;
-  startDate: string;
+  status: StripeStatus;
+  plan: string;
+  amount: number;
+  currency: string;
+  interval: string | null;
+  periodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Mock Data
-// ---------------------------------------------------------------------------
+interface TenantBillingRow {
+  groupId: string;
+  slug: string;
+  name: string;
+  stripeCustomerId: string | null;
+  subscription: SubscriptionApi | null;
+  error?: string;
+}
 
-const SUBSCRIPTIONS: Subscription[] = [
-  { id: 'sub-001', tenantName: 'Gallatin CDJR', tenantSlug: 'gallatin-cdjr', plan: 'enterprise', status: 'active', amountCents: 299900, nextBillingDate: '2026-03-15', startDate: '2025-06-01' },
-  { id: 'sub-002', tenantName: 'Acme Motors', tenantSlug: 'acme-motors', plan: 'pro', status: 'active', amountCents: 149900, nextBillingDate: '2026-03-01', startDate: '2025-08-15' },
-  { id: 'sub-003', tenantName: 'Sunset Auto Group', tenantSlug: 'sunset-auto', plan: 'pro', status: 'active', amountCents: 149900, nextBillingDate: '2026-03-10', startDate: '2025-09-01' },
-  { id: 'sub-004', tenantName: 'Heritage Ford', tenantSlug: 'heritage-ford', plan: 'starter', status: 'active', amountCents: 79900, nextBillingDate: '2026-03-05', startDate: '2025-11-01' },
-  { id: 'sub-005', tenantName: 'Premier Honda', tenantSlug: 'premier-honda', plan: 'pro', status: 'active', amountCents: 149900, nextBillingDate: '2026-03-20', startDate: '2025-10-15' },
-  { id: 'sub-006', tenantName: 'Metro Toyota', tenantSlug: 'metro-toyota', plan: 'enterprise', status: 'active', amountCents: 299900, nextBillingDate: '2026-03-12', startDate: '2025-07-01' },
-  { id: 'sub-007', tenantName: 'Valley Chevy', tenantSlug: 'valley-chevy', plan: 'starter', status: 'active', amountCents: 79900, nextBillingDate: '2026-03-08', startDate: '2025-12-01' },
-  { id: 'sub-008', tenantName: 'Lakeside BMW', tenantSlug: 'lakeside-bmw', plan: 'pro', status: 'active', amountCents: 149900, nextBillingDate: '2026-03-18', startDate: '2026-01-01' },
-  { id: 'sub-009', tenantName: 'Mountain Nissan', tenantSlug: 'mountain-nissan', plan: 'trial', status: 'trial', amountCents: 0, nextBillingDate: '2026-03-10', startDate: '2026-02-10' },
-  { id: 'sub-010', tenantName: 'Coastal Hyundai', tenantSlug: 'coastal-hyundai', plan: 'trial', status: 'trial', amountCents: 0, nextBillingDate: '2026-03-15', startDate: '2026-02-15' },
-] as const;
+interface SubscriptionsResponse {
+  success: boolean;
+  data: { tenants: TenantBillingRow[]; testMode: boolean };
+}
 
-const MONTHLY_REVENUE = [
-  { month: 'Sep', revenue: 10990 },
-  { month: 'Oct', revenue: 11790 },
-  { month: 'Nov', revenue: 12590 },
-  { month: 'Dec', revenue: 13390 },
-  { month: 'Jan', revenue: 14000 },
-  { month: 'Feb', revenue: 14800 },
-] as const;
+interface RevenuePoint {
+  month: string;
+  label: string;
+  revenue: number;
+}
+
+interface RevenueResponse {
+  success: boolean;
+  data: {
+    months: RevenuePoint[];
+    totalCents: number;
+    testMode: boolean;
+    stripeAvailable: boolean;
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -74,135 +91,221 @@ function formatCents(cents: number): string {
   return `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
-function formatDate(iso: string): string {
-  return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', {
+function formatDateIso(iso: string | null): string {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
   });
 }
 
-const PLAN_BADGE_MAP: Record<Subscription['plan'], BadgeProps['variant']> = {
-  trial: 'warning',
-  starter: 'default',
-  pro: 'gold',
-  enterprise: 'info',
+const STATUS_BADGE_MAP: Record<StripeStatus, BadgeProps['variant']> = {
+  active: 'success',
+  trialing: 'info',
+  past_due: 'error',
+  canceled: 'error',
+  unpaid: 'error',
+  incomplete: 'warning',
+  incomplete_expired: 'warning',
+  paused: 'warning',
 } as const;
 
-const STATUS_BADGE_MAP: Record<Subscription['status'], BadgeProps['variant']> = {
-  active: 'success',
-  past_due: 'error',
-  cancelled: 'error',
-  trial: 'warning',
-} as const;
+function statusLabel(status: StripeStatus): string {
+  return status
+    .split('_')
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+    .join(' ');
+}
+
+function isMrrEligible(status: StripeStatus | undefined): boolean {
+  return status === 'active' || status === 'trialing';
+}
 
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
 export default function BillingPage() {
+  const router = useRouter();
   const { toast } = useToast();
-  const [loading] = useState(false);
 
-  const today = new Date();
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(today.getDate() - 29);
+  const [tenants, setTenants] = useState<TenantBillingRow[]>([]);
+  const [revenue, setRevenue] = useState<RevenuePoint[]>([]);
+  const [testMode, setTestMode] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [stripeAvailable, setStripeAvailable] = useState(true);
 
-  const [startDate, setStartDate] = useState(
-    thirtyDaysAgo.toISOString().split('T')[0] ?? '',
-  );
-  const [endDate, setEndDate] = useState(
-    today.toISOString().split('T')[0] ?? '',
-  );
+  const fetchAll = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [subsRes, revRes] = await Promise.all([
+        authFetch('/api/admin/billing/subscriptions'),
+        authFetch('/api/admin/billing/revenue'),
+      ]);
 
-  const handleDateChange = useCallback((start: string, end: string) => {
-    setStartDate(start);
-    setEndDate(end);
-  }, []);
+      if (!subsRes.ok) {
+        throw new Error(`Subscriptions request failed: ${subsRes.status}`);
+      }
+      if (!revRes.ok) {
+        throw new Error(`Revenue request failed: ${revRes.status}`);
+      }
 
-  // Compute KPIs from mock data
+      const subsJson = (await subsRes.json()) as SubscriptionsResponse;
+      const revJson = (await revRes.json()) as RevenueResponse;
+
+      setTenants(subsJson.data.tenants);
+      setRevenue(revJson.data.months);
+      setTestMode(subsJson.data.testMode || revJson.data.testMode);
+      setStripeAvailable(revJson.data.stripeAvailable);
+    } catch (err) {
+      console.error('[BillingPage] fetch failed', err);
+      toast({
+        type: 'error',
+        title: 'Failed to load billing data',
+        description: 'Check your Stripe configuration and try again.',
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    void fetchAll();
+  }, [fetchAll]);
+
+  // ── KPIs ────────────────────────────────────────────────────────
   const mrr = useMemo(() => {
-    return SUBSCRIPTIONS.reduce((acc, sub) => acc + sub.amountCents, 0);
-  }, []);
+    return tenants.reduce((acc, t) => {
+      if (!t.subscription) return acc;
+      if (!isMrrEligible(t.subscription.status)) return acc;
+      const amt = t.subscription.amount ?? 0;
+      // Normalize yearly → monthly
+      if (t.subscription.interval === 'year') return acc + Math.round(amt / 12);
+      return acc + amt;
+    }, 0);
+  }, [tenants]);
 
-  const activeSubscriptions = useMemo(() => {
-    return SUBSCRIPTIONS.filter(
-      (s) => s.status === 'active' || s.status === 'trial',
-    ).length;
-  }, []);
+  const arr = mrr * 12;
 
-  const avgRevenuePerTenant = useMemo(() => {
-    const paying = SUBSCRIPTIONS.filter((s) => s.amountCents > 0);
-    if (paying.length === 0) return 0;
-    return Math.round(
-      paying.reduce((acc, s) => acc + s.amountCents, 0) / paying.length,
-    );
-  }, []);
+  const statusCounts = useMemo(() => {
+    const counts = {
+      active: 0,
+      trialing: 0,
+      past_due: 0,
+      canceled: 0,
+      none: 0,
+    };
+    for (const t of tenants) {
+      if (!t.subscription) {
+        counts.none += 1;
+        continue;
+      }
+      const s = t.subscription.status;
+      if (s === 'active') counts.active += 1;
+      else if (s === 'trialing') counts.trialing += 1;
+      else if (s === 'past_due') counts.past_due += 1;
+      else if (s === 'canceled') counts.canceled += 1;
+    }
+    return counts;
+  }, [tenants]);
 
+  // ── Chart ───────────────────────────────────────────────────────
   const chartData = useMemo(
-    () => MONTHLY_REVENUE.map((d) => ({ month: d.month, revenue: d.revenue })),
-    [],
+    () =>
+      revenue.map((d) => ({
+        label: d.label,
+        revenue: Math.round(d.revenue / 100),
+      })),
+    [revenue],
   );
 
   const chartBars = useMemo(
-    () => [{ dataKey: 'revenue', color: 'var(--rally-gold)', label: 'Revenue ($)' }],
+    () => [
+      { dataKey: 'revenue', color: 'var(--rally-gold)', label: 'Revenue ($)' },
+    ],
     [],
   );
 
-  // Column definitions
-  const columns = useMemo<ColumnDef<Subscription, unknown>[]>(
+  // ── Columns ─────────────────────────────────────────────────────
+  const columns = useMemo<ColumnDef<TenantBillingRow, unknown>[]>(
     () => [
       {
-        accessorKey: 'tenantName',
+        accessorKey: 'name',
         header: 'Tenant',
         cell: ({ row }) => (
           <div>
             <p className="text-sm font-medium text-text-primary">
-              {row.original.tenantName}
+              {row.original.name || '—'}
             </p>
             <p className="text-[10px] text-text-tertiary font-[family-name:var(--font-geist-mono)]">
-              {row.original.tenantSlug}
+              {row.original.slug || row.original.groupId}
             </p>
           </div>
         ),
       },
       {
-        accessorKey: 'plan',
+        id: 'plan',
         header: 'Plan',
-        cell: ({ row }) => (
-          <Badge variant={PLAN_BADGE_MAP[row.original.plan]} size="sm">
-            {row.original.plan.charAt(0).toUpperCase() + row.original.plan.slice(1)}
-          </Badge>
-        ),
+        cell: ({ row }) => {
+          const sub = row.original.subscription;
+          if (!sub) {
+            return (
+              <Badge variant="default" size="sm">
+                Not yet billed
+              </Badge>
+            );
+          }
+          return (
+            <Badge variant="gold" size="sm">
+              {sub.plan}
+            </Badge>
+          );
+        },
       },
       {
-        accessorKey: 'status',
+        id: 'status',
         header: 'Status',
-        cell: ({ row }) => (
-          <Badge variant={STATUS_BADGE_MAP[row.original.status]} size="sm">
-            {row.original.status === 'past_due'
-              ? 'Past Due'
-              : row.original.status.charAt(0).toUpperCase() + row.original.status.slice(1)}
-          </Badge>
-        ),
+        cell: ({ row }) => {
+          const sub = row.original.subscription;
+          if (!sub) {
+            return (
+              <span className="text-xs text-text-tertiary">No subscription</span>
+            );
+          }
+          return (
+            <Badge variant={STATUS_BADGE_MAP[sub.status] ?? 'default'} size="sm">
+              {statusLabel(sub.status)}
+            </Badge>
+          );
+        },
       },
       {
-        accessorKey: 'amountCents',
-        header: 'Amount/mo',
-        cell: ({ row }) => (
-          <span className="font-[family-name:var(--font-geist-mono)] text-text-primary">
-            {row.original.amountCents === 0
-              ? 'Free'
-              : formatCents(row.original.amountCents)}
-          </span>
-        ),
+        id: 'amount',
+        header: 'Amount',
+        cell: ({ row }) => {
+          const sub = row.original.subscription;
+          if (!sub) return <span className="text-text-tertiary">—</span>;
+          const suffix =
+            sub.interval === 'year'
+              ? '/yr'
+              : sub.interval === 'month'
+                ? '/mo'
+                : '';
+          return (
+            <span className="font-[family-name:var(--font-geist-mono)] text-text-primary">
+              {formatCents(sub.amount)}
+              {suffix}
+            </span>
+          );
+        },
       },
       {
-        accessorKey: 'nextBillingDate',
+        id: 'periodEnd',
         header: 'Next Billing',
         cell: ({ row }) => (
           <span className="text-text-secondary text-sm">
-            {formatDate(row.original.nextBillingDate)}
+            {formatDateIso(row.original.subscription?.periodEnd ?? null)}
           </span>
         ),
       },
@@ -214,22 +317,18 @@ export default function BillingPage() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() =>
-              toast({
-                type: 'info',
-                title: row.original.tenantName,
-                description: 'Subscription management coming soon.',
-              })
-            }
+            onClick={() => router.push(`/tenants/${row.original.groupId}`)}
+            aria-label={`View tenant ${row.original.name}`}
           >
-            <MoreHorizontal className="h-4 w-4" />
+            <ArrowRight className="h-4 w-4" />
           </Button>
         ),
       },
     ],
-    [toast],
+    [router],
   );
 
+  // ── Loading ─────────────────────────────────────────────────────
   if (loading) {
     return (
       <div className="p-6 space-y-6">
@@ -240,23 +339,13 @@ export default function BillingPage() {
           ))}
         </div>
         <Skeleton variant="card" className="h-80" />
+        <Skeleton variant="card" className="h-64" />
       </div>
     );
   }
 
   return (
     <div className="p-6 space-y-6">
-      {/* ── Preview Banner ──────────────────────────────────────── */}
-      <div className="rounded-rally-lg border border-rally-gold/20 bg-rally-goldMuted px-4 py-3 flex items-center gap-3">
-        <BarChart3 className="h-4 w-4 text-rally-gold shrink-0" />
-        <div>
-          <p className="text-sm font-medium text-rally-gold">Preview Mode</p>
-          <p className="text-xs text-text-secondary">
-            Billing data shown below is sample data. Connect a payment provider to see real revenue metrics.
-          </p>
-        </div>
-      </div>
-
       {/* ── Header ──────────────────────────────────────────────── */}
       <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
         <div>
@@ -264,17 +353,32 @@ export default function BillingPage() {
             Billing & Revenue
           </h1>
           <p className="text-sm text-text-secondary mt-1">
-            Revenue metrics, subscriptions, and billing management
+            System-wide subscriptions, MRR, and invoice history across every Rally tenant.
           </p>
         </div>
-        <DateRangePicker
-          startDate={startDate}
-          endDate={endDate}
-          onChange={handleDateChange}
-        />
+        {testMode ? (
+          <Badge variant="warning" size="sm">
+            Stripe Test Mode
+          </Badge>
+        ) : null}
       </div>
 
-      {/* ── Revenue KPIs ───────────────────────────────────────── */}
+      {!stripeAvailable ? (
+        <div className="rounded-rally-lg border border-status-warning/30 bg-status-warning/10 px-4 py-3 flex items-start gap-3">
+          <AlertTriangle className="h-4 w-4 text-status-warning shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="text-sm font-medium text-status-warning">
+              Stripe is not reachable
+            </p>
+            <p className="text-xs text-text-secondary">
+              Confirm STRIPE_SECRET_KEY is set on the server. Subscriptions and
+              revenue data will appear once the connection is restored.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      {/* ── KPI Cards ──────────────────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <CardContent className="flex items-center gap-3">
@@ -294,15 +398,31 @@ export default function BillingPage() {
 
         <Card>
           <CardContent className="flex items-center gap-3">
+            <div className="shrink-0 rounded-full bg-status-success/15 p-2.5">
+              <TrendingUp className="h-4 w-4 text-status-success" />
+            </div>
+            <div>
+              <p className="text-[10px] text-text-tertiary uppercase tracking-wider">
+                ARR
+              </p>
+              <p className="text-2xl font-bold text-text-primary font-[family-name:var(--font-geist-mono)]">
+                {formatCents(arr)}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="flex items-center gap-3">
             <div className="shrink-0 rounded-full bg-surface-overlay p-2.5">
               <CreditCard className="h-4 w-4 text-status-info" />
             </div>
             <div>
               <p className="text-[10px] text-text-tertiary uppercase tracking-wider">
-                Active Subscriptions
+                Active
               </p>
               <p className="text-2xl font-bold text-text-primary font-[family-name:var(--font-geist-mono)]">
-                {activeSubscriptions}
+                {statusCounts.active}
               </p>
             </div>
           </CardContent>
@@ -310,36 +430,71 @@ export default function BillingPage() {
 
         <Card>
           <CardContent className="flex items-center gap-3">
-            <div className="shrink-0 rounded-full bg-surface-overlay p-2.5">
-              <Users className="h-4 w-4 text-status-warning" />
+            <div className="shrink-0 rounded-full bg-status-warning/15 p-2.5">
+              <Activity className="h-4 w-4 text-status-warning" />
             </div>
             <div>
               <p className="text-[10px] text-text-tertiary uppercase tracking-wider">
-                Avg Revenue/Tenant
+                Trialing
               </p>
               <p className="text-2xl font-bold text-text-primary font-[family-name:var(--font-geist-mono)]">
-                {formatCents(avgRevenuePerTenant)}
+                {statusCounts.trialing}
               </p>
             </div>
           </CardContent>
         </Card>
+      </div>
 
+      {/* ── Status breakdown ────────────────────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-xs">
         <Card>
-          <CardContent className="flex items-center gap-3">
-            <div className="shrink-0 rounded-full bg-status-success/15 p-2.5">
-              <ArrowDownCircle className="h-4 w-4 text-status-success" />
-            </div>
-            <div>
-              <p className="text-[10px] text-text-tertiary uppercase tracking-wider">
-                Churn Rate
-              </p>
-              <div className="flex items-center gap-2">
-                <p className="text-2xl font-bold text-text-primary font-[family-name:var(--font-geist-mono)]">
-                  0%
-                </p>
-                <Badge variant="success" size="sm">Healthy</Badge>
-              </div>
-            </div>
+          <CardContent className="py-3">
+            <p className="text-[10px] text-text-tertiary uppercase tracking-wider">
+              Past Due
+            </p>
+            <p className="text-lg font-bold text-status-error font-[family-name:var(--font-geist-mono)]">
+              {statusCounts.past_due}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-3">
+            <p className="text-[10px] text-text-tertiary uppercase tracking-wider">
+              Canceled
+            </p>
+            <p className="text-lg font-bold text-text-secondary font-[family-name:var(--font-geist-mono)]">
+              {statusCounts.canceled}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-3">
+            <p className="text-[10px] text-text-tertiary uppercase tracking-wider">
+              Not Yet Billed
+            </p>
+            <p className="text-lg font-bold text-text-tertiary font-[family-name:var(--font-geist-mono)]">
+              {statusCounts.none}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-3">
+            <p className="text-[10px] text-text-tertiary uppercase tracking-wider">
+              Total Tenants
+            </p>
+            <p className="text-lg font-bold text-text-primary font-[family-name:var(--font-geist-mono)]">
+              {tenants.length}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-3">
+            <p className="text-[10px] text-text-tertiary uppercase tracking-wider">
+              With Stripe
+            </p>
+            <p className="text-lg font-bold text-rally-gold font-[family-name:var(--font-geist-mono)]">
+              {tenants.filter((t) => t.stripeCustomerId).length}
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -350,17 +505,25 @@ export default function BillingPage() {
           <div className="flex items-center gap-2">
             <BarChart3 className="h-4 w-4 text-rally-gold" />
             <p className="text-xs font-medium uppercase tracking-wider text-text-secondary">
-              Monthly Revenue — Last 6 Months
+              Paid Revenue — Last 12 Months
             </p>
           </div>
         </CardHeader>
         <CardContent>
-          <RallyBarChart
-            data={chartData}
-            bars={chartBars}
-            xAxisKey="month"
-            height={280}
-          />
+          {chartData.length === 0 ? (
+            <EmptyState
+              icon={BarChart3}
+              title="No revenue yet"
+              description="Once tenants pay invoices in Stripe they'll appear here."
+            />
+          ) : (
+            <RallyBarChart
+              data={chartData}
+              bars={chartBars}
+              xAxisKey="label"
+              height={280}
+            />
+          )}
         </CardContent>
       </Card>
 
@@ -369,12 +532,12 @@ export default function BillingPage() {
         <h2 className="text-lg font-semibold text-text-primary mb-3">
           Subscriptions
         </h2>
-        <DataTable<Subscription>
+        <DataTable<TenantBillingRow>
           columns={columns}
-          data={SUBSCRIPTIONS as unknown as Subscription[]}
-          emptyMessage="No subscriptions"
-          emptyDescription="No subscriptions have been created yet."
-          emptyIcon={CreditCard}
+          data={tenants}
+          emptyMessage="No tenants"
+          emptyDescription="No tenants have been provisioned yet."
+          emptyIcon={Users}
         />
       </div>
     </div>

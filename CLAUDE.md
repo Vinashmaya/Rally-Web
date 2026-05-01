@@ -5,9 +5,9 @@ Rally Web — the browser-based platform for Rally, a dealership operating syste
 
 ## Required Reading (EVERY task)
 Before doing ANY work, read these files in order:
-1. `soul.md` — Agent team. Adopt the relevant persona.
-2. `rules.md` — Non-negotiable constraints. Violations are blockers.
-3. `rally-web-prompt.md` — Full system spec. The source of truth.
+1. `SOUL.md` — Agent team. Adopt the relevant persona.
+2. `RULES.md` — Non-negotiable constraints. Violations are blockers.
+3. `PROMPT.md` — Full system spec. The source of truth.
 
 ## Infrastructure (Non-Negotiable)
 - **VPS:** Ubuntu 24.04 + Plesk Unlimited (12 vCore, 24GB RAM, 720GB NVMe)
@@ -68,7 +68,7 @@ Before doing ANY work, read these files in order:
 - DNS records managed via Cloudflare API (scoped token, DNS:Edit only)
 
 ## Agent Selection
-Match the task to the correct agent from soul.md:
+Match the task to the correct agent from SOUL.md:
 - Architecture/scaffolding → **MACK**
 - Design system/UI components → **PIXEL**
 - Firebase/data layer → **WIRE**

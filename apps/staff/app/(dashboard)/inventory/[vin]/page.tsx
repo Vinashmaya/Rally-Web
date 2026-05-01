@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import {
-  ArrowLeft,
+  ChevronLeft,
   Camera,
   MapPin,
   Clock,
@@ -365,9 +365,15 @@ export default function VehicleDetailPage() {
     setSelectedPhotoIndex(0);
   }, [params.vin]);
 
-  // Navigation
+  // Navigation — prefer browser history (router.back) so deep-link entry,
+  // saved-list entry, and search-result entry all return to the right place.
+  // Fall back to /inventory when there is no history (direct URL load).
   const goBack = useCallback(() => {
-    router.push('/inventory');
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push('/inventory');
+    }
   }, [router]);
 
   // ---------------------------------------------------------------------------
@@ -383,7 +389,7 @@ export default function VehicleDetailPage() {
       <div className="flex flex-col gap-6">
         <div>
           <Button variant="ghost" size="sm" onClick={goBack} className="gap-2">
-            <ArrowLeft className="h-4 w-4" />
+            <ChevronLeft className="h-4 w-4" />
             Back to Inventory
           </Button>
         </div>
@@ -427,7 +433,7 @@ export default function VehicleDetailPage() {
       {/* Back button */}
       <div>
         <Button variant="ghost" size="sm" onClick={goBack} className="gap-2">
-          <ArrowLeft className="h-4 w-4" />
+          <ChevronLeft className="h-4 w-4" />
           Back to Inventory
         </Button>
       </div>

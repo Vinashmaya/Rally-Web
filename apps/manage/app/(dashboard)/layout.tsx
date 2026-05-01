@@ -13,20 +13,38 @@ import {
   TrendingUp,
   FileBarChart,
   Settings,
+  Activity,
+  Truck,
+  Nfc,
+  ListChecks,
+  CreditCard,
 } from 'lucide-react';
 
 // Roles allowed to access the Management Console (must match middleware)
 const MANAGEMENT_ROLES = ['owner', 'general_manager', 'sales_manager', 'finance_manager'];
 
-const NAV_ITEMS: NavItem[] = [
+const BASE_NAV_ITEMS: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, href: '/' },
-  { id: 'users', label: 'Users', icon: Users, href: '/users' },
-  { id: 'stores', label: 'Stores', icon: Store, href: '/stores' },
   { id: 'inventory', label: 'Inventory', icon: Car, href: '/inventory' },
+  { id: 'activity', label: 'Activity', icon: Activity, href: '/activity' },
+  { id: 'fleet', label: 'Fleet', icon: Truck, href: '/fleet' },
+  { id: 'nfc', label: 'NFC', icon: Nfc, href: '/nfc' },
+  { id: 'lists', label: 'Lists', icon: ListChecks, href: '/lists' },
   { id: 'performance', label: 'Performance', icon: TrendingUp, href: '/performance' },
   { id: 'reports', label: 'Reports', icon: FileBarChart, href: '/reports' },
+  { id: 'stores', label: 'Stores', icon: Store, href: '/stores' },
+  { id: 'users', label: 'Users', icon: Users, href: '/users' },
   { id: 'settings', label: 'Settings', icon: Settings, href: '/settings' },
 ] as const;
+
+// Principal-only nav item (owner role + super admins).
+// Insert just before Settings so the bottom of the nav stays "system" items.
+const BILLING_NAV_ITEM: NavItem = {
+  id: 'billing',
+  label: 'Billing',
+  icon: CreditCard,
+  href: '/billing',
+};
 
 export default function ManageDashboardLayout({
   children,
@@ -82,9 +100,19 @@ export default function ManageDashboardLayout({
   const role = (profile?.role ?? 'general_manager') as UserRole;
   const roleDisplay = USER_ROLE_DISPLAY[role] ?? 'Manager';
 
+  // Principal-only items: Billing is visible to owners + super admins.
+  const isPrincipal = role === 'owner' || isSuperAdmin;
+  const navItems: NavItem[] = isPrincipal
+    ? [
+        ...BASE_NAV_ITEMS.slice(0, BASE_NAV_ITEMS.length - 1),
+        BILLING_NAV_ITEM,
+        BASE_NAV_ITEMS[BASE_NAV_ITEMS.length - 1]!,
+      ]
+    : [...BASE_NAV_ITEMS];
+
   // Determine active nav item from pathname
   const activeId =
-    NAV_ITEMS.find((item) =>
+    navItems.find((item) =>
       item.href === '/'
         ? pathname === '/'
         : pathname.startsWith(item.href)
@@ -93,7 +121,7 @@ export default function ManageDashboardLayout({
   return (
     <div className="flex h-screen overflow-hidden bg-surface-base">
       <Sidebar
-        items={NAV_ITEMS}
+        items={navItems}
         activeId={activeId}
         onNavigate={(item) => router.push(item.href)}
         store={

@@ -12,7 +12,6 @@ import {
   Battery,
   Users,
   Sparkles,
-  Languages,
   CreditCard,
   Settings,
 } from 'lucide-react';
@@ -33,7 +32,8 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'battery', label: 'Battery', icon: Battery, href: '/battery' },
   { id: 'crm', label: 'CRM', icon: Users, href: '/crm' },
   { id: 'ai', label: 'AI', icon: Sparkles, href: '/ai' },
-  { id: 'translate', label: 'Translate', icon: Languages, href: '/translate' },
+  // Translate — DEFERRED. Page kept at /translate for direct linking, but the
+  // nav entry is hidden until the feature is feature-flagged + finished.
   { id: 'cards', label: 'Cards', icon: CreditCard, href: '/cards' },
   // System
   { id: 'settings', label: 'Settings', icon: Settings, href: '/settings' },

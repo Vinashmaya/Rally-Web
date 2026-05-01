@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Search,
   User,
@@ -20,7 +21,6 @@ import {
   Skeleton,
   EmptyState,
 } from '@rally/ui';
-import { useToast } from '@rally/ui';
 import { useCrmCustomers } from '@rally/firebase';
 import { useTenantStore } from '@rally/services';
 import type { CrmCustomer, CrmSource } from '@rally/firebase';
@@ -206,7 +206,7 @@ function CRMError({ message }: { message: string }) {
 // ---------------------------------------------------------------------------
 
 export default function CRMPage() {
-  const { toast } = useToast();
+  const router = useRouter();
   const dealershipId = useTenantStore((s) => s.activeStore?.id ?? '');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -223,12 +223,7 @@ export default function CRMPage() {
   );
 
   const handleSelectCustomer = (customer: CustomerDisplay) => {
-    // TODO: Navigate to customer detail page when built
-    toast({
-      type: 'info',
-      title: `${customer.name}`,
-      description: 'Customer detail view coming soon.',
-    });
+    router.push(`/crm/${encodeURIComponent(customer.id)}`);
   };
 
   const isSearching = searchQuery.trim().length > 0;

@@ -6,7 +6,7 @@
 
 ## Rule 0: Read the Spec First
 
-`rally-web-prompt.md` is the source of truth. If you're building the inventory page, read Part 3 (role-based interfaces) AND Part 6 (interaction flows) AND Part 10 (performance requirements) before writing a single component.
+`PROMPT.md` is the source of truth. If you're building the inventory page, read Part 3 (role-based interfaces) AND Part 6 (interaction flows) AND Part 10 (performance requirements) before writing a single component.
 
 ---
 
@@ -123,7 +123,7 @@ Every interactive element has a visible focus ring. Every image has alt text. Ev
 
 ## Rule 15: One Sprint at a Time
 
-The implementation sequence in `rally-web-prompt.md` Part 9 is the plan. Sprint 1 (foundation) must be complete before Sprint 2 (staff app) begins.
+The implementation sequence in `PROMPT.md` Part 9 is the plan. Sprint 1 (foundation) must be complete before Sprint 2 (staff app) begins.
 
 ---
 

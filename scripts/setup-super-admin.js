@@ -2,17 +2,31 @@
 //
 // setup-super-admin.js
 // Sets up WeAuto dealer group, Gallatin CDJR store under it,
-// and assigns user FMcjl4yfLXeWJ1O8TSUm3N7CpYh1 as super admin (owner)
+// and assigns user FMcjl4yfLXeWJ1O8TSUm3N7CpYh1 as super admin (owner).
+//
+// In addition to seeding Firestore, this also writes the `superAdmin: true`
+// custom claim on the Firebase Auth user. Firestore rules and the Next.js
+// middleware look at that claim — without it, the super admin portal will
+// reject the user even though their Firestore role is "owner".
+//
+// Usage:
+//   node scripts/setup-super-admin.js [uid]
+//
+// If a UID is passed on the command line, it overrides USER_UID below.
+// Requires GOOGLE_APPLICATION_CREDENTIALS to point at a service account
+// with the "Firebase Authentication Admin" and Firestore write roles.
 //
 
 const { initializeApp, cert } = require('firebase-admin/app');
+const { getAuth } = require('firebase-admin/auth');
 const { getFirestore, FieldValue, GeoPoint, Timestamp } = require('firebase-admin/firestore');
 
 // Initialize with default credentials (uses GOOGLE_APPLICATION_CREDENTIALS or gcloud auth)
 initializeApp({ projectId: 'guess-63e3d' });
 const db = getFirestore();
+const auth = getAuth();
 
-const USER_UID = 'FMcjl4yfLXeWJ1O8TSUm3N7CpYh1';
+const USER_UID = process.argv[2] || 'FMcjl4yfLXeWJ1O8TSUm3N7CpYh1';
 const GROUP_ID = 'weauto';
 const STORE_ID = 'gallatin-cdjr';
 
@@ -154,11 +168,34 @@ async function main() {
     });
     console.log('   ✅ Store membership created');
 
+    // 6. Set the superAdmin custom claim on the Firebase Auth user.
+    //    Merge with any existing claims so we don't clobber `role`, `groupId`,
+    //    or `dealershipId` set by other parts of the system.
+    console.log('6. Setting superAdmin custom claim...');
+    const userRecord = await auth.getUser(USER_UID);
+    const existingClaims = userRecord.customClaims || {};
+    await auth.setCustomUserClaims(USER_UID, {
+        ...existingClaims,
+        superAdmin: true,
+        role: 'owner',
+        groupId: GROUP_ID,
+        dealershipId: STORE_ID,
+    });
+    console.log('   ✅ superAdmin claim set');
+
+    // 7. Revoke refresh tokens so the new claims take effect on the user's
+    //    next sign-in / token refresh. Without this, an ID token issued
+    //    before this script ran would keep its old claims for up to an hour.
+    console.log('7. Revoking refresh tokens...');
+    await auth.revokeRefreshTokens(USER_UID);
+    console.log('   ✅ Refresh tokens revoked — user must sign in again');
+
     console.log('\n🎉 Setup complete!');
     console.log(`   User: ${USER_UID}`);
     console.log(`   Group: WeAuto (${GROUP_ID})`);
     console.log(`   Store: Gallatin CDJR (${STORE_ID})`);
     console.log(`   Role: owner (super admin)`);
+    console.log(`   Custom claims: superAdmin=true, role=owner, groupId=${GROUP_ID}, dealershipId=${STORE_ID}`);
 
     process.exit(0);
 }

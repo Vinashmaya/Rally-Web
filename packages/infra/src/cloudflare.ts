@@ -126,6 +126,40 @@ export async function deleteDnsRecord(recordId: string): Promise<void> {
 }
 
 /**
+ * Update a DNS record by ID. Uses Cloudflare's PATCH endpoint so callers
+ * can pass only the fields they want to change.
+ */
+export interface UpdateDnsRecordInput {
+  content?: string;
+  proxied?: boolean;
+  ttl?: number;
+}
+
+export async function updateDnsRecord(
+  recordId: string,
+  input: UpdateDnsRecordInput,
+): Promise<DnsRecord> {
+  const { apiKey, email, zoneId } = getEnv();
+
+  const body: Record<string, unknown> = {};
+  if (input.content !== undefined) body.content = input.content;
+  if (input.proxied !== undefined) body.proxied = input.proxied;
+  if (input.ttl !== undefined) body.ttl = input.ttl;
+
+  const record = await cfFetch<DnsRecord>(
+    `${baseUrl(zoneId)}/${recordId}`,
+    apiKey,
+    email,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    },
+  );
+
+  return record;
+}
+
+/**
  * List all DNS records for the zone.
  */
 export async function listDnsRecords(): Promise<DnsRecord[]> {

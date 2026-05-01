@@ -1,27 +1,19 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import QRCode from 'qrcode';
 import { authFetch } from '@rally/firebase';
 import {
-  CreditCard,
   Wallet,
   Nfc,
   Link2,
-  Share2,
-  QrCode,
   Phone,
   Mail,
   MapPin,
   Building2,
-  TrendingUp,
-  Clock,
 } from 'lucide-react';
 import {
-  Card,
-  CardContent,
-  CardHeader,
   Button,
-  Badge,
   Skeleton,
 } from '@rally/ui';
 import { useToast } from '@rally/ui';
@@ -29,41 +21,52 @@ import { useAuthStore, useTenantStore } from '@rally/services';
 import { USER_ROLE_DISPLAY, type UserRole } from '@rally/firebase';
 
 // ---------------------------------------------------------------------------
-// QR Code placeholder
+// Real QR Code — encodes the user's vCard share URL
 // ---------------------------------------------------------------------------
 
-function QRCodePlaceholder() {
+interface RealQRCodeProps {
+  value: string;
+}
+
+function RealQRCode({ value }: RealQRCodeProps) {
+  const [svg, setSvg] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    QRCode.toString(value, {
+      type: 'svg',
+      errorCorrectionLevel: 'H', // High — survives logo overlay
+      margin: 1,
+      color: {
+        dark: '#0E0E10', // near-black on light card surface
+        light: '#FFFFFF',
+      },
+    })
+      .then((markup) => {
+        if (!cancelled) setSvg(markup);
+      })
+      .catch(() => {
+        if (!cancelled) setSvg(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [value]);
+
   return (
-    <div className="flex items-center justify-center rounded-[var(--radius-rally)] bg-[var(--surface-base)] p-4">
-      {/* Mock QR code grid */}
+    <div className="flex items-center justify-center rounded-[var(--radius-rally)] bg-white p-3">
       <div className="relative h-32 w-32">
-        {/* Grid pattern */}
-        <div
-          className="h-full w-full rounded-sm opacity-80"
-          style={{
-            backgroundImage: `
-              linear-gradient(45deg, var(--text-primary) 25%, transparent 25%),
-              linear-gradient(-45deg, var(--text-primary) 25%, transparent 25%),
-              linear-gradient(45deg, transparent 75%, var(--text-primary) 75%),
-              linear-gradient(-45deg, transparent 75%, var(--text-primary) 75%)
-            `,
-            backgroundSize: '8px 8px',
-            backgroundPosition: '0 0, 0 4px, 4px -4px, -4px 0',
-          }}
-        />
-        {/* Corner squares (QR code positioning markers) */}
-        <div className="absolute top-0 left-0 h-8 w-8 rounded-sm border-[3px] border-[var(--text-primary)] bg-[var(--surface-base)]">
-          <div className="absolute inset-[4px] rounded-sm bg-[var(--text-primary)]" />
-        </div>
-        <div className="absolute top-0 right-0 h-8 w-8 rounded-sm border-[3px] border-[var(--text-primary)] bg-[var(--surface-base)]">
-          <div className="absolute inset-[4px] rounded-sm bg-[var(--text-primary)]" />
-        </div>
-        <div className="absolute bottom-0 left-0 h-8 w-8 rounded-sm border-[3px] border-[var(--text-primary)] bg-[var(--surface-base)]">
-          <div className="absolute inset-[4px] rounded-sm bg-[var(--text-primary)]" />
-        </div>
-        {/* Center Rally logo placeholder */}
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="rounded-sm bg-[var(--surface-base)] px-1.5 py-0.5">
+        {svg ? (
+          <div
+            className="h-full w-full [&>svg]:h-full [&>svg]:w-full"
+            dangerouslySetInnerHTML={{ __html: svg }}
+          />
+        ) : (
+          <div className="h-full w-full animate-pulse rounded-sm bg-zinc-200" />
+        )}
+        {/* Center Rally "R" overlay — H-level ECC tolerates this */}
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <div className="rounded-sm bg-white px-1.5 py-0.5 ring-1 ring-zinc-200">
             <span className="font-mono text-[10px] font-bold text-[var(--rally-gold)]">R</span>
           </div>
         </div>
@@ -83,9 +86,10 @@ interface BusinessCardPreviewProps {
   phone: string;
   email: string;
   address: string;
+  cardUrl: string;
 }
 
-function BusinessCardPreview({ name, role, dealership, phone, email, address }: BusinessCardPreviewProps) {
+function BusinessCardPreview({ name, role, dealership, phone, email, address, cardUrl }: BusinessCardPreviewProps) {
   return (
     <div className="mx-auto w-full max-w-sm">
       <div className="relative overflow-hidden rounded-[var(--radius-rally-lg)] border-2 border-[var(--rally-gold)]/30 bg-gradient-to-br from-[var(--surface-raised)] to-[var(--surface-overlay)] p-6 shadow-xl">
@@ -139,8 +143,8 @@ function BusinessCardPreview({ name, role, dealership, phone, email, address }: 
           )}
         </div>
 
-        {/* QR code */}
-        <QRCodePlaceholder />
+        {/* QR code — real, encodes share URL */}
+        <RealQRCode value={cardUrl} />
       </div>
     </div>
   );
@@ -177,6 +181,7 @@ export default function CardsPage() {
 
   // Derive profile from real auth/tenant data
   const profile = useMemo(() => {
+    const uid = dealerUser?.id ?? firebaseUser?.uid ?? '';
     const name = dealerUser?.displayName ?? firebaseUser?.displayName ?? 'User';
     const role = (dealerUser?.role ?? 'salesperson') as UserRole;
     const roleDisplay = USER_ROLE_DISPLAY[role] ?? 'Staff';
@@ -186,31 +191,37 @@ export default function CardsPage() {
     const address = activeStore
       ? `${activeStore.address}, ${activeStore.city}, ${activeStore.state} ${activeStore.zipCode}`
       : '';
-    const slug = name.toLowerCase().replace(/\s+/g, '-');
-    const cardUrl = `https://rally.vin/card/${slug}`;
+    // Deterministic share URL keyed on uid — matches /api/cards/wallet barcode
+    const cardUrl = uid ? `https://rally.vin/c/${uid}` : 'https://rally.vin';
 
-    return { name, roleDisplay, email, phone, dealership, address, cardUrl };
+    return { uid, name, roleDisplay, email, phone, dealership, address, cardUrl };
   }, [dealerUser, firebaseUser, activeStore]);
 
+  const [walletLoading, setWalletLoading] = useState(false);
+
   const handleAddToWallet = async () => {
+    if (walletLoading) return;
+    setWalletLoading(true);
     try {
-      const response = await authFetch('/api/wallet/generate-pass', {
+      const response = await authFetch('/api/cards/wallet', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: profile.name,
-          role: profile.roleDisplay,
-          email: profile.email,
-          phone: profile.phone,
-          dealership: profile.dealership,
-        }),
+        body: JSON.stringify({ uid: profile.uid }),
       });
 
       if (!response.ok) {
+        // Try to surface server-supplied message
+        let description = 'Wallet pass generation is not configured yet.';
+        try {
+          const data = (await response.json()) as { error?: string };
+          if (data?.error) description = data.error;
+        } catch {
+          // non-JSON body — keep default
+        }
         toast({
-          type: 'info',
+          type: response.status === 501 ? 'info' : 'error',
           title: 'Apple Wallet',
-          description: 'Wallet pass generation coming soon.',
+          description,
         });
         return;
       }
@@ -225,9 +236,16 @@ export default function CardsPage() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      toast({ type: 'success', title: 'Pass downloaded', description: 'Open the file to add to Apple Wallet.' });
-    } catch {
-      toast({ type: 'info', title: 'Apple Wallet', description: 'Wallet pass generation coming soon.' });
+      toast({
+        type: 'success',
+        title: 'Pass downloaded',
+        description: 'Open the file to add to Apple Wallet.',
+      });
+    } catch (err) {
+      const description = err instanceof Error ? err.message : 'Could not generate Wallet pass.';
+      toast({ type: 'error', title: 'Apple Wallet', description });
+    } finally {
+      setWalletLoading(false);
     }
   };
 
@@ -287,6 +305,7 @@ export default function CardsPage() {
         phone={profile.phone}
         email={profile.email}
         address={profile.address}
+        cardUrl={profile.cardUrl}
       />
 
       {/* Action buttons */}
@@ -296,27 +315,28 @@ export default function CardsPage() {
           size="lg"
           className="w-full"
           onClick={handleAddToWallet}
+          disabled={walletLoading || !profile.uid}
         >
           <Wallet className="h-4 w-4" />
-          Add to Apple Wallet
+          {walletLoading ? 'Generating pass...' : 'Add to Apple Wallet'}
         </Button>
         <Button
           variant="secondary"
+          size="md"
+          className="w-full"
+          onClick={handleCopyLink}
+        >
+          <Link2 className="h-4 w-4" />
+          Copy share link
+        </Button>
+        <Button
+          variant="ghost"
           size="md"
           className="w-full"
           onClick={handleShareNFC}
         >
           <Nfc className="h-4 w-4" />
           Share via NFC
-        </Button>
-        <Button
-          variant="ghost"
-          size="md"
-          className="w-full"
-          onClick={handleCopyLink}
-        >
-          <Link2 className="h-4 w-4" />
-          Copy Link
         </Button>
       </div>
 

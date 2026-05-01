@@ -9,6 +9,14 @@
       ]
     },
     {
+      "collectionGroup": "auditLogs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "groupId", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "crmCustomers",
       "queryScope": "COLLECTION",
       "fields": [
@@ -39,6 +47,14 @@
         { "fieldPath": "dealershipId", "order": "ASCENDING" },
         { "fieldPath": "source", "order": "ASCENDING" },
         { "fieldPath": "lastUpdate", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "nfcTags",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "dealershipId", "order": "ASCENDING" },
+        { "fieldPath": "lastScannedAt", "order": "DESCENDING" }
       ]
     },
     {

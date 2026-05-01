@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { authFetch, useDocument } from '@rally/firebase';
 import {
   Card,
   CardHeader,
@@ -9,131 +10,48 @@ import {
   Button,
   Badge,
   EmptyState,
+  Skeleton,
   useToast,
 } from '@rally/ui';
 import {
   Plug,
-  Plus,
   RefreshCw,
   Clock,
   AlertTriangle,
   XCircle,
   CheckCircle2,
   Settings,
+  HelpCircle,
   Zap,
 } from 'lucide-react';
 
-// ── Types ──────────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Types — must match server payload at /api/admin/integrations/health
+// ---------------------------------------------------------------------------
 
-type IntegrationStatus = 'healthy' | 'degraded' | 'down' | 'unconfigured';
+type IntegrationStatus = 'healthy' | 'degraded' | 'down' | 'unknown' | 'unconfigured';
 type IntegrationType = 'crm' | 'dms' | 'tracking' | 'communication' | 'infrastructure';
 
-interface Integration {
+interface IntegrationHealth {
   id: string;
   name: string;
   type: IntegrationType;
-  status: IntegrationStatus;
-  responseTimeMs: number;
-  errorRate: number;
-  lastChecked: string;
   description: string;
   color: string;
+  status: IntegrationStatus;
+  latencyMs: number | null;
+  lastChecked: string;
+  error?: string;
 }
 
-// ── Mock Data ──────────────────────────────────────────────────────
+interface IntegrationsHealthDoc {
+  integrations: IntegrationHealth[];
+  lastChecked: string;
+}
 
-const INITIAL_INTEGRATIONS: Integration[] = [
-  {
-    id: 'int-1',
-    name: 'Vincue',
-    type: 'dms',
-    status: 'healthy',
-    responseTimeMs: 180,
-    errorRate: 0.1,
-    lastChecked: '2026-02-24T09:55:00Z',
-    description: 'Dealer Management System — inventory sync, deal management, and reporting.',
-    color: '#3B82F6',
-  },
-  {
-    id: 'int-2',
-    name: 'DriveCentric',
-    type: 'crm',
-    status: 'healthy',
-    responseTimeMs: 220,
-    errorRate: 0.3,
-    lastChecked: '2026-02-24T09:55:00Z',
-    description: 'Customer Relationship Management — lead tracking, follow-ups, and customer history.',
-    color: '#8B5CF6',
-  },
-  {
-    id: 'int-3',
-    name: 'eLead',
-    type: 'crm',
-    status: 'degraded',
-    responseTimeMs: 890,
-    errorRate: 5.2,
-    lastChecked: '2026-02-24T09:54:00Z',
-    description: 'CRM platform — lead management and internet lead routing. Experiencing elevated latency.',
-    color: '#F59E0B',
-  },
-  {
-    id: 'int-4',
-    name: 'Kahu',
-    type: 'tracking',
-    status: 'healthy',
-    responseTimeMs: 150,
-    errorRate: 0,
-    lastChecked: '2026-02-24T09:55:00Z',
-    description: 'Vehicle tracking and lot management — GPS positions and theft recovery.',
-    color: '#22C55E',
-  },
-  {
-    id: 'int-5',
-    name: 'Ghost',
-    type: 'tracking',
-    status: 'unconfigured',
-    responseTimeMs: 0,
-    errorRate: 0,
-    lastChecked: '',
-    description: 'Rally OBD2 hardware — telematics, battery health, and iBeacon lot tracking.',
-    color: '#D4A017',
-  },
-  {
-    id: 'int-6',
-    name: 'Mapbox',
-    type: 'infrastructure',
-    status: 'healthy',
-    responseTimeMs: 95,
-    errorRate: 0,
-    lastChecked: '2026-02-24T09:55:00Z',
-    description: 'Maps and geocoding — dealership lot maps, vehicle positioning, and route planning.',
-    color: '#0EA5E9',
-  },
-  {
-    id: 'int-7',
-    name: 'Cloudflare',
-    type: 'infrastructure',
-    status: 'healthy',
-    responseTimeMs: 12,
-    errorRate: 0,
-    lastChecked: '2026-02-24T09:55:00Z',
-    description: 'CDN and DNS — edge caching, DDoS protection, and subdomain management.',
-    color: '#F97316',
-  },
-  {
-    id: 'int-8',
-    name: 'Firebase',
-    type: 'infrastructure',
-    status: 'healthy',
-    responseTimeMs: 45,
-    errorRate: 0,
-    lastChecked: '2026-02-24T09:55:00Z',
-    description: 'Backend platform — Auth, Firestore, and Storage. Shared with iOS app.',
-    color: '#EAB308',
-  },
-] as const;
-
-// ── Status Config ──────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Status config
+// ---------------------------------------------------------------------------
 
 const STATUS_CONFIG: Record<
   IntegrationStatus,
@@ -166,6 +84,13 @@ const STATUS_CONFIG: Record<
     pulse: true,
     icon: XCircle,
   },
+  unknown: {
+    label: 'Unknown',
+    badgeVariant: 'default',
+    dotClass: 'bg-text-tertiary',
+    pulse: false,
+    icon: HelpCircle,
+  },
   unconfigured: {
     label: 'Not Configured',
     badgeVariant: 'default',
@@ -175,9 +100,11 @@ const STATUS_CONFIG: Record<
   },
 } as const;
 
-// ── Helpers ────────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
-function formatTimestamp(iso: string): string {
+function formatTimestamp(iso: string | null | undefined): string {
   if (!iso) return 'Never';
   const d = new Date(iso);
   return d.toLocaleTimeString('en-US', {
@@ -187,26 +114,15 @@ function formatTimestamp(iso: string): string {
   });
 }
 
-function formatResponseTime(ms: number): string {
-  if (ms === 0) return '--';
+function formatLatency(ms: number | null): string {
+  if (ms === null || ms === undefined) return '—';
   return `${ms}ms`;
 }
 
-function formatErrorRate(rate: number): string {
-  if (rate === 0) return '0%';
-  return `${rate}%`;
-}
-
-function getResponseTimeColor(ms: number): string {
-  if (ms === 0) return 'text-text-tertiary';
+function getLatencyColor(ms: number | null): string {
+  if (ms === null) return 'text-text-tertiary';
   if (ms < 200) return 'text-status-success';
-  if (ms < 500) return 'text-status-warning';
-  return 'text-status-error';
-}
-
-function getErrorRateColor(rate: number): string {
-  if (rate === 0) return 'text-status-success';
-  if (rate < 2) return 'text-status-warning';
+  if (ms < 800) return 'text-status-warning';
   return 'text-status-error';
 }
 
@@ -221,7 +137,9 @@ function getTypeLabel(type: IntegrationType): string {
   return labels[type] ?? type;
 }
 
-// ── Status Dot ─────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Status dot
+// ---------------------------------------------------------------------------
 
 function StatusDot({ status }: { status: IntegrationStatus }) {
   const config = STATUS_CONFIG[status];
@@ -232,23 +150,26 @@ function StatusDot({ status }: { status: IntegrationStatus }) {
           className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 ${config.dotClass}`}
         />
       )}
-      <span
-        className={`relative inline-flex h-3 w-3 rounded-full ${config.dotClass}`}
-      />
+      <span className={`relative inline-flex h-3 w-3 rounded-full ${config.dotClass}`} />
     </span>
   );
 }
 
-// ── Integration Card ───────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Integration card
+// TODO: Per-integration row click → details panel showing recent error
+// rates / per-probe history (need a new `system/integrationsHealthHistory`
+// doc with rolling samples). Out of scope for this sprint.
+// ---------------------------------------------------------------------------
 
 function IntegrationCard({
   integration,
-  onTest,
-  testing,
+  onRefresh,
+  refreshing,
 }: {
-  integration: Integration;
-  onTest: (id: string) => void;
-  testing: boolean;
+  integration: IntegrationHealth;
+  onRefresh: () => void;
+  refreshing: boolean;
 }) {
   const statusConfig = STATUS_CONFIG[integration.status];
   const StatusIcon = statusConfig.icon;
@@ -258,7 +179,6 @@ function IntegrationCard({
       <CardHeader>
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
-            {/* Logo circle with initial */}
             <div
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold"
               style={{ backgroundColor: `${integration.color}20`, color: integration.color }}
@@ -267,9 +187,7 @@ function IntegrationCard({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-base font-semibold text-text-primary">
-                  {integration.name}
-                </h3>
+                <h3 className="text-base font-semibold text-text-primary">{integration.name}</h3>
                 <Badge variant="default" size="sm">
                   {getTypeLabel(integration.type)}
                 </Badge>
@@ -290,33 +208,18 @@ function IntegrationCard({
       </CardHeader>
 
       <CardContent>
-        {/* Metrics row */}
-        <div className="grid grid-cols-3 gap-4">
-          {/* Response Time */}
+        <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1">
             <p className="text-xs font-medium uppercase tracking-wider text-text-tertiary">
               Response Time
             </p>
             <p
-              className={`text-lg font-bold font-[family-name:var(--font-geist-mono)] ${getResponseTimeColor(integration.responseTimeMs)}`}
+              className={`text-lg font-bold font-[family-name:var(--font-geist-mono)] ${getLatencyColor(integration.latencyMs)}`}
             >
-              {formatResponseTime(integration.responseTimeMs)}
+              {formatLatency(integration.latencyMs)}
             </p>
           </div>
 
-          {/* Error Rate */}
-          <div className="space-y-1">
-            <p className="text-xs font-medium uppercase tracking-wider text-text-tertiary">
-              Error Rate
-            </p>
-            <p
-              className={`text-lg font-bold font-[family-name:var(--font-geist-mono)] ${getErrorRateColor(integration.errorRate)}`}
-            >
-              {formatErrorRate(integration.errorRate)}
-            </p>
-          </div>
-
-          {/* Last Checked */}
           <div className="space-y-1">
             <p className="text-xs font-medium uppercase tracking-wider text-text-tertiary">
               Last Check
@@ -326,120 +229,113 @@ function IntegrationCard({
             </p>
           </div>
         </div>
+
+        {integration.error && (
+          <div className="mt-3 rounded-rally bg-status-error/10 border border-status-error/30 px-3 py-2">
+            <p className="text-xs text-status-error font-[family-name:var(--font-geist-mono)] break-words">
+              {integration.error}
+            </p>
+          </div>
+        )}
       </CardContent>
 
       <CardFooter className="pt-3">
-        <Button
-          variant={integration.status === 'unconfigured' ? 'primary' : 'secondary'}
-          size="sm"
-          loading={testing}
-          onClick={() => onTest(integration.id)}
-        >
-          {integration.status === 'unconfigured' ? (
-            <>
-              <Settings className="h-3.5 w-3.5" />
-              Configure
-            </>
-          ) : (
-            <>
-              <Zap className="h-3.5 w-3.5" />
-              Test Connection
-            </>
-          )}
+        <Button variant="secondary" size="sm" loading={refreshing} onClick={onRefresh}>
+          <Zap className="h-3.5 w-3.5" />
+          Re-probe
         </Button>
       </CardFooter>
     </Card>
   );
 }
 
-// ── Main Page ──────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
 
 export default function IntegrationsPage() {
   const { toast } = useToast();
-  const [integrations] = useState<Integration[]>(
-    INITIAL_INTEGRATIONS.map((i) => ({ ...i }))
+  const [refreshing, setRefreshing] = useState(false);
+  const [hasFetched, setHasFetched] = useState(false);
+
+  // Real-time listener on the cached health doc.
+  const { data: doc, loading: docLoading } = useDocument<IntegrationsHealthDoc & { id: string }>(
+    'system/integrationsHealth',
   );
-  const [testingIds, setTestingIds] = useState<Set<string>>(new Set());
-  const [lastGlobalCheck] = useState('2026-02-24T09:55:00Z');
 
-  // ── Test connection handler ──────────────────────────────────────
+  const integrations = doc?.integrations ?? [];
+  const lastGlobalCheck = doc?.lastChecked ?? null;
 
-  const handleTest = useCallback(
-    (id: string) => {
-      const integration = integrations.find((i) => i.id === id);
-      if (!integration) return;
-
-      if (integration.status === 'unconfigured') {
+  // On first mount, hit the GET endpoint so the route either serves a cached
+  // payload or runs a fresh probe and writes the Firestore doc — which our
+  // useDocument listener picks up.
+  useEffect(() => {
+    if (hasFetched) return;
+    setHasFetched(true);
+    authFetch('/api/admin/integrations/health')
+      .then((res) => res.json())
+      .catch(() => {
         toast({
-          type: 'info',
-          title: 'Configuration required',
-          description: `${integration.name} needs API credentials before it can be tested. Configure in Settings.`,
+          type: 'error',
+          title: 'Failed to load integration health',
+          description: 'Could not reach the integrations API.',
         });
-        return;
-      }
+      });
+  }, [hasFetched, toast]);
 
-      // Simulate test connection
-      setTestingIds((prev) => new Set(prev).add(id));
-
-      setTimeout(() => {
-        setTestingIds((prev) => {
-          const next = new Set(prev);
-          next.delete(id);
-          return next;
-        });
-
-        if (integration.status === 'degraded') {
+  const handleRefreshAll = useCallback(() => {
+    setRefreshing(true);
+    authFetch('/api/admin/integrations/health', { method: 'POST' })
+      .then((res) => res.json())
+      .then((payload: { success?: boolean; error?: string }) => {
+        if (payload.success) {
           toast({
-            type: 'warning',
-            title: `${integration.name} — Degraded`,
-            description: `Connection succeeded but response time is elevated (${integration.responseTimeMs}ms). Error rate: ${integration.errorRate}%.`,
-          });
-        } else if (integration.status === 'down') {
-          toast({
-            type: 'error',
-            title: `${integration.name} — Connection Failed`,
-            description: 'Unable to reach the service. Check API credentials and network connectivity.',
+            type: 'success',
+            title: 'Health probes complete',
+            description: 'All integrations re-checked.',
           });
         } else {
           toast({
-            type: 'success',
-            title: `${integration.name} — Healthy`,
-            description: `Connection successful. Response time: ${integration.responseTimeMs}ms.`,
+            type: 'error',
+            title: 'Refresh failed',
+            description: payload.error ?? 'Unknown error',
           });
         }
-      }, 1500);
+      })
+      .catch(() => {
+        toast({ type: 'error', title: 'Refresh failed', description: 'Network error' });
+      })
+      .finally(() => setRefreshing(false));
+  }, [toast]);
+
+  // Per-integration "Re-probe" button uses the same POST — there's no
+  // single-integration probe endpoint, since probing is cheap in parallel.
+  const handleRefreshOne = useCallback(
+    (_id: string) => {
+      handleRefreshAll();
     },
-    [integrations, toast],
+    [handleRefreshAll],
   );
 
-  // ── Summary stats ────────────────────────────────────────────────
+  // Summary
+  const summary = useMemo(() => {
+    return {
+      healthy: integrations.filter((i) => i.status === 'healthy').length,
+      degraded: integrations.filter((i) => i.status === 'degraded').length,
+      down: integrations.filter((i) => i.status === 'down').length,
+      unknown: integrations.filter((i) => i.status === 'unknown').length,
+      unconfigured: integrations.filter((i) => i.status === 'unconfigured').length,
+    };
+  }, [integrations]);
 
-  const healthyCount = integrations.filter((i) => i.status === 'healthy').length;
-  const degradedCount = integrations.filter((i) => i.status === 'degraded').length;
-  const downCount = integrations.filter((i) => i.status === 'down').length;
-  const unconfiguredCount = integrations.filter((i) => i.status === 'unconfigured').length;
-
-  // ── Render ───────────────────────────────────────────────────────
+  const initialLoading = docLoading && integrations.length === 0;
 
   return (
     <div className="p-6 space-y-6">
-      {/* ── Preview Banner ──────────────────────────────────────── */}
-      <div className="rounded-rally-lg border border-rally-gold/20 bg-rally-goldMuted px-4 py-3 flex items-center gap-3">
-        <Plug className="h-4 w-4 text-rally-gold shrink-0" />
-        <div>
-          <p className="text-sm font-medium text-rally-gold">Preview Mode</p>
-          <p className="text-xs text-text-secondary">
-            Integration health data shown below is sample data. Real-time health checks will be available when integrations are configured.
-          </p>
-        </div>
-      </div>
-
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-text-primary">
-            Integration Health
-          </h1>
+          <h1 className="text-2xl font-bold text-text-primary">Integration Health</h1>
           <p className="text-sm text-text-secondary mt-1">
             External service connectivity and performance monitoring
           </p>
@@ -454,59 +350,63 @@ export default function IntegrationsPage() {
               </span>
             </span>
           </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() =>
-              toast({
-                type: 'info',
-                title: 'Refreshing all connections...',
-                description: 'Health check will run against all configured integrations.',
-              })
-            }
-          >
+          <Button variant="secondary" size="sm" loading={refreshing} onClick={handleRefreshAll}>
             <RefreshCw className="h-3.5 w-3.5" />
-            Refresh All
+            Refresh
           </Button>
         </div>
       </div>
 
       {/* Summary Badges */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <Badge variant="success" size="md">
-          <CheckCircle2 className="h-3 w-3 mr-1" />
-          {healthyCount} Healthy
-        </Badge>
-        {degradedCount > 0 && (
-          <Badge variant="warning" size="md">
-            <AlertTriangle className="h-3 w-3 mr-1" />
-            {degradedCount} Degraded
+      {!initialLoading && (
+        <div className="flex items-center gap-3 flex-wrap">
+          <Badge variant="success" size="md">
+            <CheckCircle2 className="h-3 w-3 mr-1" />
+            {summary.healthy} Healthy
           </Badge>
-        )}
-        {downCount > 0 && (
-          <Badge variant="error" size="md">
-            <XCircle className="h-3 w-3 mr-1" />
-            {downCount} Down
-          </Badge>
-        )}
-        {unconfiguredCount > 0 && (
-          <Badge variant="default" size="md">
-            <Settings className="h-3 w-3 mr-1" />
-            {unconfiguredCount} Not Configured
-          </Badge>
-        )}
-      </div>
+          {summary.degraded > 0 && (
+            <Badge variant="warning" size="md">
+              <AlertTriangle className="h-3 w-3 mr-1" />
+              {summary.degraded} Degraded
+            </Badge>
+          )}
+          {summary.down > 0 && (
+            <Badge variant="error" size="md">
+              <XCircle className="h-3 w-3 mr-1" />
+              {summary.down} Down
+            </Badge>
+          )}
+          {summary.unknown > 0 && (
+            <Badge variant="default" size="md">
+              <HelpCircle className="h-3 w-3 mr-1" />
+              {summary.unknown} Unknown
+            </Badge>
+          )}
+          {summary.unconfigured > 0 && (
+            <Badge variant="default" size="md">
+              <Settings className="h-3 w-3 mr-1" />
+              {summary.unconfigured} Not Configured
+            </Badge>
+          )}
+        </div>
+      )}
 
-      {/* Integration Cards Grid */}
-      {integrations.length === 0 ? (
+      {/* Body */}
+      {initialLoading ? (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} variant="card" className="h-44" />
+          ))}
+        </div>
+      ) : integrations.length === 0 ? (
         <EmptyState
           icon={Plug}
-          title="No integrations configured"
-          description="Add external service integrations to monitor connectivity and performance."
+          title="No integration data yet"
+          description="Run a refresh to probe all integrations."
           action={
-            <Button variant="primary" size="md">
-              <Plus className="h-4 w-4" />
-              Add Integration
+            <Button variant="primary" size="md" loading={refreshing} onClick={handleRefreshAll}>
+              <RefreshCw className="h-4 w-4" />
+              Run Health Probes
             </Button>
           }
         />
@@ -516,8 +416,8 @@ export default function IntegrationsPage() {
             <IntegrationCard
               key={integration.id}
               integration={integration}
-              onTest={handleTest}
-              testing={testingIds.has(integration.id)}
+              onRefresh={() => handleRefreshOne(integration.id)}
+              refreshing={refreshing}
             />
           ))}
         </div>

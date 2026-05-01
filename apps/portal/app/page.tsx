@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { getAdminDb } from '@rally/firebase/admin';
@@ -10,7 +11,13 @@ export const dynamic = 'force-dynamic';
 // the group config from Firestore for branding.
 // Unknown slugs redirect to rally.vin.
 
-async function getGroupBySlug(slug: string): Promise<{ name: string; logoUrl?: string } | null> {
+interface TenantBranding {
+  name: string;
+  logoUrl?: string;
+  publicInventoryEnabled: boolean;
+}
+
+async function getGroupBySlug(slug: string): Promise<TenantBranding | null> {
   try {
     const snapshot = await getAdminDb()
       .collection('groups')
@@ -19,7 +26,54 @@ async function getGroupBySlug(slug: string): Promise<{ name: string; logoUrl?: s
       .get();
     if (snapshot.empty) return null;
     const data = snapshot.docs[0]!.data();
-    return { name: data.name as string, logoUrl: data.logoUrl as string | undefined };
+
+    // Branding logo: prefer groups/{groupId}/config/branding.logoUrl, then fall
+    // back to a flat `logoUrl` on the group doc (legacy shape from the iOS Dealership model).
+    let logoUrl = typeof data.logoUrl === 'string' ? data.logoUrl : undefined;
+    try {
+      const branding = await getAdminDb()
+        .collection('groups')
+        .doc(snapshot.docs[0]!.id)
+        .collection('config')
+        .doc('branding')
+        .get();
+      if (branding.exists) {
+        const b = branding.data();
+        if (b && typeof b.logoUrl === 'string') logoUrl = b.logoUrl;
+      }
+    } catch {
+      // Subcollection lookup is optional — fall through to legacy field.
+    }
+
+    // Public inventory flag: groups/{groupId}/config/featureFlags.publicInventory
+    // (with fallback to the inline featureFlags map on the group doc).
+    let publicInventoryEnabled = false;
+    const inlineFlag = data.featureFlags as { publicInventory?: unknown } | undefined;
+    if (inlineFlag && typeof inlineFlag.publicInventory === 'boolean') {
+      publicInventoryEnabled = inlineFlag.publicInventory;
+    }
+    try {
+      const flagsDoc = await getAdminDb()
+        .collection('groups')
+        .doc(snapshot.docs[0]!.id)
+        .collection('config')
+        .doc('featureFlags')
+        .get();
+      if (flagsDoc.exists) {
+        const f = flagsDoc.data();
+        if (f && typeof f.publicInventory === 'boolean') {
+          publicInventoryEnabled = f.publicInventory;
+        }
+      }
+    } catch {
+      // Subcollection lookup is optional — fall through to inline flag / default.
+    }
+
+    return {
+      name: data.name as string,
+      logoUrl,
+      publicInventoryEnabled,
+    };
   } catch {
     return null;
   }
@@ -38,6 +92,7 @@ export default async function PortalLandingPage() {
   }
 
   const tenantDisplayName = group.name;
+  const tenantLogoUrl = group.logoUrl;
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-8">
@@ -45,12 +100,26 @@ export default async function PortalLandingPage() {
       <div className="flex flex-col items-center gap-8 max-w-md text-center">
         {/* Logo Area */}
         <div className="flex flex-col items-center gap-4">
-          {/* Placeholder logo — TODO: load from tenant config */}
-          <div className="flex h-16 w-16 items-center justify-center rounded-rally-xl bg-rally-goldMuted">
-            <span className="text-2xl font-extrabold font-mono text-rally-gold">
-              {tenantDisplayName.slice(0, 2).toUpperCase()}
-            </span>
-          </div>
+          {/* Tenant logo from groups/{groupId}/config/branding.logoUrl, with a
+              gold-on-black Rally fallback when no branding asset is configured. */}
+          {tenantLogoUrl ? (
+            <div className="relative h-16 w-16 overflow-hidden rounded-rally-xl bg-rally-goldMuted">
+              <Image
+                src={tenantLogoUrl}
+                alt={`${tenantDisplayName} logo`}
+                fill
+                sizes="64px"
+                className="object-contain"
+                priority
+              />
+            </div>
+          ) : (
+            <div className="flex h-16 w-16 items-center justify-center rounded-rally-xl bg-rally-goldMuted">
+              <span className="text-2xl font-extrabold font-mono text-rally-gold">
+                {tenantDisplayName.slice(0, 2).toUpperCase()}
+              </span>
+            </div>
+          )}
 
           <div className="flex flex-col items-center gap-2">
             <h1 className="text-3xl font-bold text-text-primary tracking-tight">
@@ -71,13 +140,17 @@ export default async function PortalLandingPage() {
             Sign In
           </a>
 
-          {/* TODO: Enable public inventory browsing via tenant config flag */}
-          <a
-            href="/inventory"
-            className="inline-flex items-center justify-center text-sm font-medium text-text-secondary hover:text-rally-gold transition-colors"
-          >
-            View Inventory
-          </a>
+          {/* Public inventory CTA — gated on
+              groups/{groupId}/config/featureFlags.publicInventory.
+              Hidden entirely when the flag is undefined or false. */}
+          {group.publicInventoryEnabled && (
+            <a
+              href="/inventory"
+              className="inline-flex items-center justify-center text-sm font-medium text-text-secondary hover:text-rally-gold transition-colors"
+            >
+              View Inventory
+            </a>
+          )}
         </div>
 
         {/* Powered by Rally */}

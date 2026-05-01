@@ -15,6 +15,7 @@ import {
   requestSslCert,
   subdomainExists,
 } from './plesk';
+import { createStripeCustomer, deleteStripeCustomer } from './stripe';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -136,7 +137,8 @@ async function getFirebaseAdmin() {
  * 5. Plesk → Request Let's Encrypt cert
  * 6. Firestore → Seed groups/{groupId}/config/subdomain
  * 7. Firebase Auth → Create principal user account
- * 8. Firestore → Write to auditLog
+ * 8. Stripe → Create Customer + persist groups/{groupId}/config/billing
+ * 9. Firestore → Write to auditLog
  */
 export async function provisionTenant(params: {
   slug: string;
@@ -154,6 +156,7 @@ export async function provisionTenant(params: {
     'request_ssl_cert',
     'seed_firestore_group',
     'create_principal_user',
+    'create_stripe_customer',
     'write_audit_log',
   ];
 
@@ -162,6 +165,7 @@ export async function provisionTenant(params: {
   let pleskCreated = false;
   let groupId: string | undefined;
   let principalUid: string | undefined;
+  let stripeCustomerId: string | undefined;
 
   const result: ProvisionResult = {
     success: false,
@@ -382,7 +386,83 @@ export async function provisionTenant(params: {
     }
 
     // -----------------------------------------------------------------------
-    // Step 8: Firestore → Write to auditLog
+    // Step 8: Stripe → Create Customer + persist on tenant config
+    //
+    // One Rally tenant maps 1:1 to one Stripe Customer. The customer id is
+    // stored at groups/{groupId}/config/billing so the admin + manage billing
+    // pages can fetch subscriptions on demand.
+    //
+    // Subscription state lives in Stripe — Rally does not duplicate it.
+    // TODO(milestone-2): ingest webhooks (invoice.paid, customer.subscription.*)
+    // for low-latency status updates instead of on-demand reads.
+    // -----------------------------------------------------------------------
+    markStep(steps, 'create_stripe_customer', 'running');
+    try {
+      const customer = await createStripeCustomer({
+        groupId: groupId!,
+        groupName,
+        slug,
+        email: principalEmail,
+      });
+      stripeCustomerId = customer.id;
+
+      const now = new Date().toISOString();
+      await db
+        .collection('groups')
+        .doc(groupId!)
+        .collection('config')
+        .doc('billing')
+        .set({
+          stripeCustomerId: customer.id,
+          stripeMode: customer.livemode ? 'live' : 'test',
+          createdAt: now,
+          updatedAt: now,
+        });
+
+      markStep(steps, 'create_stripe_customer', 'completed');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      markStep(steps, 'create_stripe_customer', 'failed', message);
+      result.error = `Stripe customer creation failed: ${message}`;
+
+      // ROLLBACK: principal user → group → vhost → DNS
+      if (principalUid) {
+        try {
+          await auth.deleteUser(principalUid);
+        } catch {
+          // Best-effort
+        }
+        try {
+          await db.collection('users').doc(principalUid).delete();
+        } catch {
+          // Best-effort
+        }
+        if (groupId) {
+          try {
+            await db
+              .collection('employees')
+              .doc(principalUid)
+              .collection('memberships')
+              .doc(groupId)
+              .delete();
+          } catch {
+            // Best-effort
+          }
+        }
+      }
+      if (groupId) {
+        try {
+          await db.collection('groups').doc(groupId).delete();
+        } catch {
+          // Best-effort
+        }
+      }
+      await rollbackInfra(steps, dnsRecord, pleskCreated, slug, result);
+      return result;
+    }
+
+    // -----------------------------------------------------------------------
+    // Step 9: Firestore → Write to auditLog
     // -----------------------------------------------------------------------
     markStep(steps, 'write_audit_log', 'running');
     try {
@@ -393,6 +473,7 @@ export async function provisionTenant(params: {
         groupName,
         principalEmail,
         principalUid,
+        stripeCustomerId: stripeCustomerId ?? null,
         vpsIp: VPS_IP,
         subdomain: `${slug}.rally.vin`,
         timestamp: new Date().toISOString(),
@@ -419,7 +500,11 @@ export async function provisionTenant(params: {
     const message = err instanceof Error ? err.message : String(err);
     result.error = `Unexpected provisioning error: ${message}`;
 
-    // Best-effort rollback
+    // Best-effort rollback — order matches reverse provisioning order
+    if (stripeCustomerId) {
+      await deleteStripeCustomer(stripeCustomerId);
+      markStep(steps, 'create_stripe_customer', 'rolled_back');
+    }
     await rollbackInfra(steps, dnsRecord, pleskCreated, slug, result);
     return result;
   }

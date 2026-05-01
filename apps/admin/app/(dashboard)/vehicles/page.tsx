@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Badge,
   Card,
@@ -277,6 +278,7 @@ const columns: ColumnDef<SystemVehicle, unknown>[] = [
 // ---------------------------------------------------------------------------
 
 export default function SystemVehiclesPage() {
+  const router = useRouter();
   const [statusFilter, setStatusFilter] = useState('all');
   const [search, setSearch] = useState('');
 
@@ -400,8 +402,13 @@ export default function SystemVehiclesPage() {
           emptyMessage="No vehicles found"
           emptyDescription="Try adjusting your search or filters."
           defaultPageSize={25}
-          onRowClick={() => {
-            // TODO: Navigate to vehicle detail cross-tenant view
+          onRowClick={(row) => {
+            // Cross-tenant vehicle detail. Vehicles are scoped by dealershipId
+            // (the store ID); we use that as the URL "groupId" segment so
+            // the detail page can scope its Firestore read.
+            const groupId = row.dealershipId || row.tenantSlug;
+            if (!groupId || !row.vin) return;
+            router.push(`/vehicles/${encodeURIComponent(groupId)}/${encodeURIComponent(row.vin)}`);
           }}
         />
       )}

@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { BrowserMultiFormatReader } from '@zxing/browser';
+import type { IScannerControls } from '@zxing/browser';
 import { ScanLine, Nfc, QrCode, Keyboard, Clock, Trash2, ChevronRight } from 'lucide-react';
 import {
   Card,
@@ -9,7 +11,6 @@ import {
   CardHeader,
   Button,
   Input,
-  ScanSheet,
   type ScanMode,
 } from '@rally/ui';
 
@@ -103,6 +104,14 @@ export default function ScanPage() {
   const [nfcError, setNfcError] = useState<string | null>(null);
   const nfcReaderRef = useRef<NDEFReader | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // QR camera scanner state
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const qrReaderRef = useRef<BrowserMultiFormatReader | null>(null);
+  const qrControlsRef = useRef<IScannerControls | null>(null);
+  const qrStreamRef = useRef<MediaStream | null>(null);
+  const [qrScanning, setQrScanning] = useState(false);
+  const [qrError, setQrError] = useState<string | null>(null);
 
   // Load recent scans on mount
   useEffect(() => {
@@ -198,6 +207,118 @@ export default function ScanPage() {
       setNfcScanning(false);
     }
   }, [handleScan]);
+
+  // Stop QR camera scanning + release stream
+  const stopQrScan = useCallback(() => {
+    if (qrControlsRef.current) {
+      try {
+        qrControlsRef.current.stop();
+      } catch {
+        // ignore — controls may already be stopped
+      }
+      qrControlsRef.current = null;
+    }
+    if (qrStreamRef.current) {
+      qrStreamRef.current.getTracks().forEach((t) => t.stop());
+      qrStreamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setQrScanning(false);
+  }, []);
+
+  // Start QR camera scanning
+  const startQrScan = useCallback(async () => {
+    if (typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      setQrError('Camera not supported on this device.');
+      return;
+    }
+
+    setQrError(null);
+    setQrScanning(true);
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' },
+        audio: false,
+      });
+      qrStreamRef.current = stream;
+
+      const videoEl = videoRef.current;
+      if (!videoEl) {
+        stream.getTracks().forEach((t) => t.stop());
+        qrStreamRef.current = null;
+        setQrScanning(false);
+        return;
+      }
+
+      videoEl.srcObject = stream;
+      await videoEl.play().catch(() => {
+        /* play() may reject if user navigates away — handled by cleanup */
+      });
+
+      const reader = new BrowserMultiFormatReader();
+      qrReaderRef.current = reader;
+
+      const controls = await reader.decodeFromVideoElement(videoEl, (result) => {
+        if (!result) return;
+        const text = result.getText().trim();
+        if (!text) return;
+
+        // Rally NFC/QR URL → extract VIN; otherwise use text as-is (VIN or stock)
+        const vinFromUrl = text.match(/\/v\/([A-HJ-NPR-Z0-9]{17})/i);
+        const value = vinFromUrl?.[1] ?? text;
+
+        // Stop the reader + release stream before navigating
+        if (qrControlsRef.current) {
+          try {
+            qrControlsRef.current.stop();
+          } catch {
+            // ignore
+          }
+          qrControlsRef.current = null;
+        }
+        if (qrStreamRef.current) {
+          qrStreamRef.current.getTracks().forEach((t) => t.stop());
+          qrStreamRef.current = null;
+        }
+        if (videoRef.current) videoRef.current.srcObject = null;
+        setQrScanning(false);
+        handleScan(value);
+      });
+
+      qrControlsRef.current = controls;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Camera access denied.';
+      setQrError(message);
+      setQrScanning(false);
+      if (qrStreamRef.current) {
+        qrStreamRef.current.getTracks().forEach((t) => t.stop());
+        qrStreamRef.current = null;
+      }
+    }
+  }, [handleScan]);
+
+  // Auto-start QR when entering QR mode; stop when leaving
+  useEffect(() => {
+    if (mode === 'qr') {
+      void startQrScan();
+    } else {
+      stopQrScan();
+    }
+    return () => {
+      stopQrScan();
+    };
+  }, [mode, startQrScan, stopQrScan]);
+
+  // Cleanup on unmount — stop any active stream and clear refs
+  useEffect(() => {
+    return () => {
+      stopQrScan();
+      nfcReaderRef.current = null;
+    };
+  }, [stopQrScan]);
 
   // Clear recent scans
   const handleClearRecent = useCallback(() => {
@@ -322,32 +443,66 @@ export default function ScanPage() {
 
           {/* QR Mode */}
           {mode === 'qr' && (
-            <div className="flex flex-col items-center gap-6 text-center w-full">
-              {/* Camera viewfinder placeholder */}
-              <div className="relative w-full aspect-square max-w-[240px] rounded-[var(--radius-rally-lg)] border-2 border-dashed border-[var(--surface-border-hover)] bg-[var(--surface-overlay)] flex items-center justify-center">
-                <QrCode
-                  className="h-12 w-12 text-[var(--text-disabled)]"
-                  strokeWidth={1}
+            <div className="flex flex-col items-center gap-4 text-center w-full">
+              {/* Camera viewfinder — live video */}
+              <div className="relative w-full aspect-square max-w-[280px] overflow-hidden rounded-[var(--radius-rally-lg)] border border-[var(--surface-border)] bg-black">
+                <video
+                  ref={videoRef}
+                  className="h-full w-full object-cover"
+                  autoPlay
+                  muted
+                  playsInline
                 />
+                {!qrScanning && !qrError && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-[var(--surface-overlay)]">
+                    <QrCode
+                      className="h-12 w-12 text-[var(--text-disabled)]"
+                      strokeWidth={1}
+                    />
+                  </div>
+                )}
                 {/* Corner markers */}
-                <div className="absolute top-0 left-0 h-6 w-6 border-t-2 border-l-2 border-[var(--rally-gold)] rounded-tl-sm" />
-                <div className="absolute top-0 right-0 h-6 w-6 border-t-2 border-r-2 border-[var(--rally-gold)] rounded-tr-sm" />
-                <div className="absolute bottom-0 left-0 h-6 w-6 border-b-2 border-l-2 border-[var(--rally-gold)] rounded-bl-sm" />
-                <div className="absolute bottom-0 right-0 h-6 w-6 border-b-2 border-r-2 border-[var(--rally-gold)] rounded-br-sm" />
+                <div className="pointer-events-none absolute top-3 left-3 h-7 w-7 border-t-2 border-l-2 border-[var(--rally-gold)] rounded-tl-sm" />
+                <div className="pointer-events-none absolute top-3 right-3 h-7 w-7 border-t-2 border-r-2 border-[var(--rally-gold)] rounded-tr-sm" />
+                <div className="pointer-events-none absolute bottom-3 left-3 h-7 w-7 border-b-2 border-l-2 border-[var(--rally-gold)] rounded-bl-sm" />
+                <div className="pointer-events-none absolute bottom-3 right-3 h-7 w-7 border-b-2 border-r-2 border-[var(--rally-gold)] rounded-br-sm" />
+                {/* Sweep line */}
+                {qrScanning && (
+                  <div
+                    className="pointer-events-none absolute left-3 right-3 h-px bg-gradient-to-r from-transparent via-[var(--rally-gold)] to-transparent"
+                    style={{ animation: 'rally-sweep 2s ease-in-out infinite' }}
+                  />
+                )}
+                <style jsx>{`
+                  @keyframes rally-sweep {
+                    0% { top: 12px; }
+                    50% { top: calc(100% - 12px); }
+                    100% { top: 12px; }
+                  }
+                `}</style>
               </div>
-              <p className="text-sm text-[var(--text-secondary)]">
-                QR scanning coming soon
-              </p>
-              <p className="text-xs text-[var(--text-tertiary)]">
-                A camera-based VIN barcode scanner will be available in a future update.
-              </p>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setMode('manual')}
-              >
-                Use Manual Entry
-              </Button>
+
+              {qrScanning && !qrError && (
+                <p className="text-sm text-[var(--text-secondary)]">
+                  Point camera at a VIN barcode or QR
+                </p>
+              )}
+
+              {qrError && (
+                <>
+                  <p className="text-sm text-[var(--status-error)]">{qrError}</p>
+                  <p className="text-xs text-[var(--text-tertiary)] max-w-xs">
+                    Camera access is required for QR scanning. Use manual entry instead.
+                  </p>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setMode('manual')}
+                  >
+                    Switch to Manual Entry
+                  </Button>
+                </>
+              )}
             </div>
           )}
 

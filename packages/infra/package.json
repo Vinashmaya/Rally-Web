@@ -8,10 +8,12 @@
     ".": "./src/index.ts",
     "./cloudflare": "./src/cloudflare.ts",
     "./plesk": "./src/plesk.ts",
-    "./provision": "./src/provision.ts"
+    "./provision": "./src/provision.ts",
+    "./stripe": "./src/stripe.ts"
   },
   "dependencies": {
     "firebase-admin": "^13.0.0",
+    "stripe": "^17.5.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {

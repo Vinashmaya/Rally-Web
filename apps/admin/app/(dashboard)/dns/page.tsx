@@ -12,6 +12,9 @@ import {
   DataTable,
   Skeleton,
   useToast,
+  Modal,
+  ModalHeader,
+  ModalBody,
 } from '@rally/ui';
 import type { ColumnDef } from '@rally/ui';
 import {
@@ -25,6 +28,7 @@ import {
   Server,
   Link2,
   ShieldCheck,
+  AlertTriangle,
 } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -77,7 +81,16 @@ export default function DnsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState<DnsFilter>('all');
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // Edit/Delete modal state
+  const [editTarget, setEditTarget] = useState<DnsRecord | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DnsRecord | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Edit form state — initialized when modal opens
+  const [editContent, setEditContent] = useState('');
+  const [editProxied, setEditProxied] = useState(false);
+  const [editTtl, setEditTtl] = useState<number>(1);
 
   // ── Fetch DNS records from API ──────────────────────────────────
 
@@ -120,50 +133,79 @@ export default function DnsPage() {
     return { total, aRecords, cnameRecords, proxied };
   }, [records]);
 
-  // ── Delete handler ───────────────────────────────────────────────
+  // ── Open Edit modal ──────────────────────────────────────────────
 
-  function handleDelete(record: DnsRecord) {
-    if (deletingId === record.id) {
-      // Confirmed — call API to delete
-      setDeletingId(null);
-      fetch(`/api/admin/dns/${record.id}`, { method: 'DELETE' })
-        .then((res) => res.json())
-        .then((data: { success?: boolean; error?: string }) => {
-          if (data.success) {
-            setRecords((prev) => prev.filter((r) => r.id !== record.id));
-            toast({
-              type: 'success',
-              title: 'DNS record deleted',
-              description: `${record.type} record for ${record.name} has been removed.`,
-            });
-          } else {
-            toast({
-              type: 'error',
-              title: 'Delete failed',
-              description: data.error ?? 'Could not delete the DNS record.',
-            });
-          }
-        })
-        .catch(() => {
-          toast({
-            type: 'error',
-            title: 'Delete failed',
-            description: 'Network error while deleting DNS record.',
-          });
-        });
-    } else {
-      // First click — confirm
-      setDeletingId(record.id);
-      toast({
-        type: 'warning',
-        title: 'Confirm deletion',
-        description: `Click delete again to remove ${record.name}. This cannot be undone.`,
-        duration: 4000,
+  const openEditModal = useCallback((record: DnsRecord) => {
+    setEditTarget(record);
+    setEditContent(record.content);
+    setEditProxied(record.proxied);
+    setEditTtl(record.ttl);
+  }, []);
+
+  // ── Submit Edit ──────────────────────────────────────────────────
+
+  async function handleEditSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editTarget) return;
+
+    setSubmitting(true);
+    try {
+      const res = await authFetch(`/api/admin/dns/${editTarget.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: editContent.trim(),
+          proxied: editProxied,
+          ttl: editTtl,
+        }),
       });
-      // Auto-clear confirmation after 4 seconds
-      setTimeout(() => {
-        setDeletingId((current) => (current === record.id ? null : current));
-      }, 4000);
+      const json = (await res.json()) as { success?: boolean; data?: DnsRecord; error?: string };
+
+      if (!res.ok || !json.success || !json.data) {
+        throw new Error(json.error ?? 'Failed to update DNS record');
+      }
+
+      const updated = json.data;
+      setRecords((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+      toast({
+        type: 'success',
+        title: 'DNS record updated',
+        description: `${updated.type} record for ${updated.name} has been saved.`,
+      });
+      setEditTarget(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Network error while updating DNS record';
+      toast({ type: 'error', title: 'Update failed', description: message });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  // ── Submit Delete ────────────────────────────────────────────────
+
+  async function handleDeleteConfirm() {
+    if (!deleteTarget) return;
+    setSubmitting(true);
+    try {
+      const res = await authFetch(`/api/admin/dns/${deleteTarget.id}`, { method: 'DELETE' });
+      const json = (await res.json()) as { success?: boolean; error?: string };
+
+      if (!res.ok || !json.success) {
+        throw new Error(json.error ?? 'Failed to delete DNS record');
+      }
+
+      setRecords((prev) => prev.filter((r) => r.id !== deleteTarget.id));
+      toast({
+        type: 'success',
+        title: 'DNS record deleted',
+        description: `${deleteTarget.type} record for ${deleteTarget.name} has been removed.`,
+      });
+      setDeleteTarget(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Network error while deleting DNS record';
+      toast({ type: 'error', title: 'Delete failed', description: message });
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -276,22 +318,20 @@ export default function DnsPage() {
               size="sm"
               onClick={(e) => {
                 e.stopPropagation();
-                toast({
-                  type: 'info',
-                  title: 'Edit coming soon',
-                  description: `Editing ${row.original.name} will be available when the Cloudflare API route is connected.`,
-                });
+                openEditModal(row.original);
               }}
+              aria-label={`Edit ${row.original.name}`}
             >
               <Pencil className="h-3.5 w-3.5" />
             </Button>
             <Button
-              variant={deletingId === row.original.id ? 'danger' : 'ghost'}
+              variant="ghost"
               size="sm"
               onClick={(e) => {
                 e.stopPropagation();
-                handleDelete(row.original);
+                setDeleteTarget(row.original);
               }}
+              aria-label={`Delete ${row.original.name}`}
             >
               <Trash2 className="h-3.5 w-3.5" />
             </Button>
@@ -299,7 +339,7 @@ export default function DnsPage() {
         ),
       },
     ],
-    [deletingId, toast],
+    [openEditModal],
   );
 
   // ── Stat cards data ──────────────────────────────────────────────
@@ -399,6 +439,169 @@ export default function DnsPage() {
         defaultPageSize={25}
       />
       )}
+
+      {/* ── Edit Modal ──────────────────────────────────────────── */}
+      <Modal
+        open={editTarget !== null}
+        onClose={() => (submitting ? undefined : setEditTarget(null))}
+        labelledBy="dns-edit-modal-title"
+      >
+        <ModalHeader
+          title="Edit DNS Record"
+          titleId="dns-edit-modal-title"
+          description={editTarget ? `${editTarget.type} • ${editTarget.name}` : undefined}
+          onClose={() => setEditTarget(null)}
+          closeDisabled={submitting}
+        />
+        <ModalBody>
+        {editTarget && (
+          <form onSubmit={handleEditSubmit} className="space-y-4">
+            <div>
+              <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-text-secondary">
+                Content
+              </label>
+              <Input
+                value={editContent}
+                onChange={(e) => setEditContent(e.target.value)}
+                placeholder="74.208.123.209"
+                required
+                disabled={submitting}
+              />
+              <p className="mt-1 text-xs text-text-tertiary">
+                For A records, this is the target IPv4 address.
+              </p>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-text-secondary">
+                TTL
+              </label>
+              <select
+                value={editTtl}
+                onChange={(e) => setEditTtl(Number(e.target.value))}
+                disabled={submitting}
+                className="w-full rounded-rally border border-surface-border bg-surface-overlay px-3 py-2 text-sm text-text-primary focus:border-rally-gold focus:outline-none focus:ring-2 focus:ring-rally-gold/20"
+              >
+                <option value={1}>Auto</option>
+                <option value={60}>1 minute</option>
+                <option value={300}>5 minutes</option>
+                <option value={1800}>30 minutes</option>
+                <option value={3600}>1 hour</option>
+                <option value={86400}>1 day</option>
+              </select>
+            </div>
+
+            <div className="flex items-start gap-3 rounded-rally border border-surface-border bg-surface-overlay p-3">
+              <input
+                id="edit-proxied"
+                type="checkbox"
+                checked={editProxied}
+                onChange={(e) => setEditProxied(e.target.checked)}
+                disabled={submitting}
+                className="mt-0.5 h-4 w-4 rounded border-surface-border bg-surface-base accent-rally-gold"
+              />
+              <label htmlFor="edit-proxied" className="cursor-pointer">
+                <span className="block text-sm font-medium text-text-primary">
+                  Proxy through Cloudflare
+                </span>
+                <span className="block text-xs text-text-tertiary">
+                  Enable orange-cloud CDN + WAF. Disable for raw DNS only.
+                </span>
+              </label>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="md"
+                onClick={() => setEditTarget(null)}
+                disabled={submitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                size="md"
+                disabled={submitting || editContent.trim().length === 0}
+              >
+                {submitting ? 'Saving…' : 'Save changes'}
+              </Button>
+            </div>
+          </form>
+        )}
+        </ModalBody>
+      </Modal>
+
+      {/* ── Delete Confirmation Modal ──────────────────────────── */}
+      <Modal
+        open={deleteTarget !== null}
+        onClose={() => (submitting ? undefined : setDeleteTarget(null))}
+        labelledBy="dns-delete-modal-title"
+      >
+        <ModalHeader
+          title="Delete DNS Record"
+          titleId="dns-delete-modal-title"
+          description="This action cannot be undone."
+          onClose={() => setDeleteTarget(null)}
+          closeDisabled={submitting}
+        />
+        <ModalBody>
+        {deleteTarget && (
+          <div className="space-y-4">
+            <div className="flex items-start gap-3 rounded-rally border border-status-error/30 bg-status-error/10 p-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-status-error" />
+              <div>
+                <p className="text-sm font-medium text-text-primary">
+                  Remove {deleteTarget.type} record for {deleteTarget.name}?
+                </p>
+                <p className="mt-1 text-xs text-text-secondary">
+                  Any tenant subdomain or service relying on this record will stop resolving
+                  immediately. DNS deletes propagate within ~60 seconds via Cloudflare.
+                </p>
+              </div>
+            </div>
+
+            <dl className="grid grid-cols-2 gap-3 rounded-rally border border-surface-border bg-surface-overlay p-3 text-xs">
+              <div>
+                <dt className="text-text-tertiary uppercase tracking-wider">Name</dt>
+                <dd className="font-[family-name:var(--font-geist-mono)] text-text-primary">
+                  {deleteTarget.name}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-text-tertiary uppercase tracking-wider">Content</dt>
+                <dd className="font-[family-name:var(--font-geist-mono)] text-text-primary truncate">
+                  {deleteTarget.content}
+                </dd>
+              </div>
+            </dl>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="md"
+                onClick={() => setDeleteTarget(null)}
+                disabled={submitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="danger"
+                size="md"
+                onClick={handleDeleteConfirm}
+                disabled={submitting}
+              >
+                {submitting ? 'Deleting…' : 'Delete record'}
+              </Button>
+            </div>
+          </div>
+        )}
+        </ModalBody>
+      </Modal>
     </div>
   );
 }

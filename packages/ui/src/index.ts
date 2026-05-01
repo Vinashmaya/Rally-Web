@@ -30,6 +30,15 @@ export type { AvatarProps } from './Avatar';
 export { EmptyState } from './EmptyState';
 export type { EmptyStateProps } from './EmptyState';
 
+export { Modal, ModalHeader, ModalBody, ModalFooter } from './Modal';
+export type {
+  ModalProps,
+  ModalHeaderProps,
+  ModalBodyProps,
+  ModalFooterProps,
+  ModalSize,
+} from './Modal';
+
 // ── Status & Activity ─────────────────────────────────────────────
 export { StatusBadge, VEHICLE_STATUS_MAP } from './StatusBadge';
 export type { StatusBadgeProps, VehicleStatus } from './StatusBadge';
@@ -53,6 +62,11 @@ export type { CommandPaletteProps, CommandItem } from './CommandPalette';
 
 // ── Banners ───────────────────────────────────────────────────────
 export { OfflineBanner } from './OfflineBanner';
+
+export { ImpersonationBanner } from './ImpersonationBanner';
+export type { ImpersonationBannerProps } from './ImpersonationBanner';
+
+export { ImpersonationHandoff } from './ImpersonationHandoff';
 
 // ── Sprint 2: Inventory & Activity ──────────────────────────────
 export { VehicleCard } from './VehicleCard';

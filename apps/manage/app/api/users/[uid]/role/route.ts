@@ -61,6 +61,13 @@ export async function PUT(
       role,
     });
 
+    // Revoke existing refresh tokens so the user's session reflects the new
+    // role on next refresh. Without this, ID tokens already issued continue
+    // to carry the old `role` claim until they expire (up to 1 hour). With
+    // revocation, the next request from this user forces a token refresh,
+    // which re-reads the freshly written custom claims.
+    await adminAuth.revokeRefreshTokens(uid);
+
     // Update Firestore user document
     const now = new Date().toISOString();
     await adminDb.collection('users').doc(uid).update({

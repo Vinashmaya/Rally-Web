@@ -4,6 +4,7 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import { authFetch } from '@rally/firebase';
 import {
   Badge,
+  Button,
   Card,
   CardContent,
   Input,
@@ -11,6 +12,10 @@ import {
   EmptyState,
   FilterBar,
   DataTable,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
   RelativeTime,
   useToast,
 } from '@rally/ui';
@@ -281,6 +286,20 @@ function ActionCell({
 // Page Component
 // ---------------------------------------------------------------------------
 
+interface ImpersonationApiResponse {
+  customToken: string;
+  expiresIn: number;
+  redirectHost: string;
+  target: {
+    uid: string;
+    email: string | null;
+    displayName: string | null;
+    role: string | null;
+    groupId: string | null;
+    dealershipId: string | null;
+  };
+}
+
 export default function SystemUsersPage() {
   const { toast } = useToast();
   const [roleFilter, setRoleFilter] = useState('all');
@@ -290,6 +309,10 @@ export default function SystemUsersPage() {
   const [rawUsers, setRawUsers] = useState<ApiUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+
+  // Impersonation confirm-modal state
+  const [impersonateTarget, setImpersonateTarget] = useState<SystemUser | null>(null);
+  const [impersonating, setImpersonating] = useState(false);
 
   useEffect(() => {
     authFetch('/api/admin/users')
@@ -326,16 +349,13 @@ export default function SystemUsersPage() {
       }
 
       if (action === 'impersonate') {
-        toast({
-          type: 'info',
-          title: 'Impersonation',
-          description: 'Impersonation coming soon',
-        });
+        const target = users.find((u) => u.id === uid) ?? null;
+        setImpersonateTarget(target);
         return;
       }
 
       try {
-        const res = await fetch(`/api/admin/users/${uid}/${action}`, {
+        const res = await authFetch(`/api/admin/users/${uid}/${action}`, {
           method: 'POST',
         });
 
@@ -358,8 +378,43 @@ export default function SystemUsersPage() {
         });
       }
     },
-    [toast],
+    [toast, users],
   );
+
+  // Confirmed impersonation — POST to mint a custom token, redirect to portal.
+  const handleImpersonateConfirm = useCallback(async () => {
+    if (!impersonateTarget) return;
+    setImpersonating(true);
+    try {
+      const res = await authFetch(
+        `/api/admin/users/${impersonateTarget.id}/impersonate`,
+        { method: 'POST' },
+      );
+      const body = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        data?: ImpersonationApiResponse;
+        error?: string;
+      };
+
+      if (!res.ok || !body.success || !body.data) {
+        throw new Error(body.error ?? 'Failed to start impersonation');
+      }
+
+      const { customToken, redirectHost } = body.data;
+      // Hand off to the destination portal — handler there reads `?ic=`,
+      // calls signInWithCustomToken, and strips the param from history.
+      window.location.href = `${redirectHost}/?ic=${encodeURIComponent(customToken)}`;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'An unexpected error occurred';
+      toast({
+        type: 'error',
+        title: 'Impersonation failed',
+        description: message,
+      });
+      setImpersonating(false);
+      setImpersonateTarget(null);
+    }
+  }, [impersonateTarget, toast]);
 
   // Column definitions (inside component to access handleUserAction)
   const columns: ColumnDef<SystemUser, unknown>[] = useMemo(() => [
@@ -556,6 +611,55 @@ export default function SystemUsersPage() {
           defaultPageSize={25}
         />
       )}
+
+      {/* Impersonation confirm modal */}
+      <Modal
+        open={impersonateTarget !== null}
+        onClose={() => {
+          if (!impersonating) setImpersonateTarget(null);
+        }}
+        size="md"
+        ariaLabel="Confirm impersonation"
+      >
+        <ModalHeader
+          title="Impersonate user"
+          onClose={() => setImpersonateTarget(null)}
+          closeDisabled={impersonating}
+        />
+        <ModalBody>
+          <p className="text-sm text-text-secondary">
+            You are about to start an impersonation session as{' '}
+            <span className="font-semibold text-text-primary">
+              {impersonateTarget?.displayName ?? 'this user'}
+            </span>
+            {impersonateTarget?.email ? (
+              <>
+                {' '}
+                <span className="text-text-tertiary">({impersonateTarget.email})</span>
+              </>
+            ) : null}
+            . Every action you take will be attributed to them. The session is
+            recorded in audit logs and expires in 1 hour.
+          </p>
+        </ModalBody>
+        <ModalFooter>
+          <Button
+            variant="ghost"
+            onClick={() => setImpersonateTarget(null)}
+            disabled={impersonating}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleImpersonateConfirm}
+            loading={impersonating}
+            disabled={impersonating}
+          >
+            Start impersonation
+          </Button>
+        </ModalFooter>
+      </Modal>
     </div>
   );
 }
